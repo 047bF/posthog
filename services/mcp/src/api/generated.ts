@@ -13364,11 +13364,6 @@ export namespace Schemas {
       last_materialized_at?: string | null;
       /** Last materialization error message, if any. */
       error?: string;
-      /**
-       * How often the materialization refreshes (e.g. 'every_hour').
-       * @nullable
-       */
-      sync_frequency?: string | null;
     }
 
     export type EndpointRefreshMode = typeof EndpointRefreshMode[keyof typeof EndpointRefreshMode];
@@ -13403,10 +13398,10 @@ export namespace Schemas {
        */
       description?: string | null;
       /**
-       * Cache TTL in seconds (60–86400).
+       * How fresh the data should be, in seconds. Must be one of: 900 (15 min), 1800 (30 min), 3600 (1 h), 21600 (6 h), 43200 (12 h), 86400 (24 h, default), 604800 (7 d). Controls cache TTL and materialization sync frequency.
        * @nullable
        */
-      cache_age_seconds?: number | null;
+      data_freshness_seconds?: number | null;
       /**
        * Whether this endpoint is available for execution via the API.
        * @nullable
@@ -13417,11 +13412,6 @@ export namespace Schemas {
        * @nullable
        */
       is_materialized?: boolean | null;
-      /**
-       * Materialization refresh frequency (e.g. 'every_hour', 'every_day').
-       * @nullable
-       */
-      sync_frequency?: string | null;
       /**
        * Short ID of the insight this endpoint was derived from.
        * @nullable
@@ -13467,11 +13457,8 @@ export namespace Schemas {
       query: unknown;
       /** Whether the endpoint can be executed via the API. */
       is_active: boolean;
-      /**
-       * Cache TTL in seconds, or null for default interval-based caching.
-       * @nullable
-       */
-      cache_age_seconds: number | null;
+      /** How fresh the data is, in seconds. One of: 900, 1800, 3600, 21600, 43200, 86400, 604800. */
+      data_freshness_seconds: number;
       /** Relative API path to execute this endpoint (e.g. /api/environments/{team_id}/endpoints/{name}/run). */
       endpoint_path: string;
       /**
@@ -13612,11 +13599,8 @@ export namespace Schemas {
       query: unknown;
       /** Whether the endpoint can be executed via the API. */
       is_active: boolean;
-      /**
-       * Cache TTL in seconds, or null for default interval-based caching.
-       * @nullable
-       */
-      cache_age_seconds: number | null;
+      /** How fresh the data is, in seconds. One of: 900, 1800, 3600, 21600, 43200, 86400, 604800. */
+      data_freshness_seconds: number;
       /** Relative API path to execute this endpoint (e.g. /api/environments/{team_id}/endpoints/{name}/run). */
       endpoint_path: string;
       /**
@@ -23367,10 +23351,10 @@ export namespace Schemas {
        */
       description?: string | null;
       /**
-       * Cache TTL in seconds (60–86400).
+       * How fresh the data should be, in seconds. Must be one of: 900 (15 min), 1800 (30 min), 3600 (1 h), 21600 (6 h), 43200 (12 h), 86400 (24 h, default), 604800 (7 d). Controls cache TTL and materialization sync frequency.
        * @nullable
        */
-      cache_age_seconds?: number | null;
+      data_freshness_seconds?: number | null;
       /**
        * Whether this endpoint is available for execution via the API.
        * @nullable
@@ -23381,11 +23365,6 @@ export namespace Schemas {
        * @nullable
        */
       is_materialized?: boolean | null;
-      /**
-       * Materialization refresh frequency (e.g. 'every_hour', 'every_day').
-       * @nullable
-       */
-      sync_frequency?: string | null;
       /**
        * Short ID of the insight this endpoint was derived from.
        * @nullable
