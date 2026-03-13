@@ -19,6 +19,8 @@ services:
             - 'plugins:host-gateway'
             - 'capture:host-gateway'
             - 'capture-ai:host-gateway'
+            - 'capture-logs:host-gateway'
+            - 'capture-metrics:host-gateway'
             - 'replay-capture:host-gateway'
             - 'feature-flags:host-gateway'
             - 'hypercache-server:host-gateway'
@@ -47,6 +49,10 @@ services:
 
                     @capture-logs {
                         path /i/v1/logs
+                    }
+
+                    @capture-metrics {
+                        path /i/v1/metrics
                     }
 
                     @flags {
@@ -81,7 +87,11 @@ services:
                     }
 
                     handle @capture-logs {
-                        reverse_proxy capture-logs:4318
+                        reverse_proxy capture-logs:4320
+                    }
+
+                    handle @capture-metrics {
+                        reverse_proxy capture-metrics:4319
                     }
 
                     handle @replay-capture {
@@ -527,16 +537,10 @@ services:
             # Used by otel-collector-config.dev.yaml to scope container log
             # collection to this compose project only.
             COMPOSE_PROJECT: posthog
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
         depends_on:
             - jaeger
-            - capture-logs
-
-    capture-logs:
-        extends:
-            file: docker-compose.base.yml
-            service: capture-logs
-        depends_on:
-            - kafka
 
     jaeger:
         extends:
