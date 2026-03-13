@@ -623,7 +623,11 @@ tools:
         description: Create ai_events ClickHouse tables for local development
     clickhouse:logs:init:
         bin_script: clickhouse-logs-init
-        description: 'TODO: add description for clickhouse-logs-init'
+        description: Initialize ClickHouse logs schema (temporary, pre-migration)
+        hidden: true
+    clickhouse:metrics:init:
+        bin_script: clickhouse-metrics-init
+        description: Initialize ClickHouse metrics schema (temporary, pre-migration)
         hidden: true
     create:notebook:node:
         bin_script: create-notebook-node.sh
