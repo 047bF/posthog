@@ -49,6 +49,8 @@ import { ProductToursToolbarMenu } from '~/toolbar/product-tours/ProductToursToo
 import { screenshotUploadLogic } from '~/toolbar/screenshot-upload/screenshotUploadLogic'
 import { ScreenshotUploadModal } from '~/toolbar/screenshot-upload/ScreenshotUploadModal'
 import { HeatmapToolbarMenu } from '~/toolbar/stats/HeatmapToolbarMenu'
+import { SurveySidebar } from '~/toolbar/surveys/SurveySidebar'
+import { surveysToolbarLogic } from '~/toolbar/surveys/surveysToolbarLogic'
 import { SurveysToolbarMenu } from '~/toolbar/surveys/SurveysToolbarMenu'
 import { toolbarConfigLogic } from '~/toolbar/toolbarConfigLogic'
 import { useToolbarFeatureFlag } from '~/toolbar/toolbarPosthogJS'
@@ -389,6 +391,7 @@ export function Toolbar(): JSX.Element | null {
     const { isAuthenticated, userIntent, authStatus, uiHostConfigModalVisible } = useValues(toolbarConfigLogic)
     const { authenticate, openUiHostConfigModal, closeUiHostConfigModal } = useActions(toolbarConfigLogic)
     const { selectedTourId, isPreviewing } = useValues(productToursLogic)
+    const { isCreating: isSurveyCreating } = useValues(surveysToolbarLogic)
 
     const showExperimentsFlag = useToolbarFeatureFlag('web-experiments')
     const showExperiments = inStorybook() || inStorybookTestRunner() || showExperimentsFlag
@@ -433,11 +436,12 @@ export function Toolbar(): JSX.Element | null {
         return null
     }
 
-    const showSidebar = selectedTourId !== null && !isPreviewing
+    const showToursSidebar = selectedTourId !== null && !isPreviewing
 
     return (
         <>
-            {showSidebar && <ProductToursSidebar />}
+            {showToursSidebar && <ProductToursSidebar />}
+            {isSurveyCreating && <SurveySidebar />}
             <ToolbarInfoMenu />
             <div
                 ref={ref}
