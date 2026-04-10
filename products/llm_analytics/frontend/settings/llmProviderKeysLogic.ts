@@ -8,15 +8,15 @@ import { teamLogic } from 'scenes/teamLogic'
 import type { llmProviderKeysLogicType } from './llmProviderKeysLogicType'
 
 export type LLMProviderKeyState = 'unknown' | 'ok' | 'invalid' | 'error'
-export type LLMProvider = 'openai' | 'anthropic' | 'gemini' | 'together_ai' | 'openrouter' | 'fireworks'
+export type LLMProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'fireworks' | 'together_ai'
 
 export const LLM_PROVIDER_LABELS: Record<LLMProvider, string> = {
     openai: 'OpenAI',
     anthropic: 'Anthropic',
     gemini: 'Google Gemini',
-    together_ai: 'Together AI',
     openrouter: 'OpenRouter',
     fireworks: 'Fireworks',
+    together_ai: 'Together AI',
 }
 
 const LLM_PROVIDERS = new Set<string>(Object.keys(LLM_PROVIDER_LABELS))
