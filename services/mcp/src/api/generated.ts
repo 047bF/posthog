@@ -14344,6 +14344,7 @@ export namespace Schemas {
     * `gemini` - Gemini
     * `openrouter` - Openrouter
     * `fireworks` - Fireworks
+    * `together_ai` - Together AI
      */
     export type ProviderEnum = typeof ProviderEnum[keyof typeof ProviderEnum];
 
@@ -14354,6 +14355,7 @@ export namespace Schemas {
       Gemini: 'gemini',
       Openrouter: 'openrouter',
       Fireworks: 'fireworks',
+      TogetherAi: 'together_ai',
     } as const;
 
     /**

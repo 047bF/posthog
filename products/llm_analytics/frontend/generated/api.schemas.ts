@@ -33,6 +33,7 @@ export const OutputTypeEnumApi = {
  * `gemini` - Gemini
  * `openrouter` - Openrouter
  * `fireworks` - Fireworks
+ * `together_ai` - Together AI
  */
 export type ProviderEnumApi = (typeof ProviderEnumApi)[keyof typeof ProviderEnumApi]
 
@@ -42,6 +43,7 @@ export const ProviderEnumApi = {
     Gemini: 'gemini',
     Openrouter: 'openrouter',
     Fireworks: 'fireworks',
+    TogetherAi: 'together_ai',
 } as const
 
 /**
