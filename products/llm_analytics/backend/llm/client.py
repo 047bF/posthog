@@ -99,6 +99,7 @@ def _get_provider(name: str) -> "Provider":
     from products.llm_analytics.backend.llm.providers.gemini import GeminiAdapter
     from products.llm_analytics.backend.llm.providers.openai import OpenAIAdapter
     from products.llm_analytics.backend.llm.providers.openrouter import OpenRouterAdapter
+    from products.llm_analytics.backend.llm.providers.together import TogetherAdapter
 
     match name:
         case "openai":
@@ -107,6 +108,8 @@ def _get_provider(name: str) -> "Provider":
             return AnthropicAdapter()
         case "gemini":
             return GeminiAdapter()
+        case "together_ai":
+            return TogetherAdapter()
         case "openrouter":
             return OpenRouterAdapter()
         case "fireworks":

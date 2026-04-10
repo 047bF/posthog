@@ -8,12 +8,13 @@ import { teamLogic } from 'scenes/teamLogic'
 import type { llmProviderKeysLogicType } from './llmProviderKeysLogicType'
 
 export type LLMProviderKeyState = 'unknown' | 'ok' | 'invalid' | 'error'
-export type LLMProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'fireworks'
+export type LLMProvider = 'openai' | 'anthropic' | 'gemini' | 'together_ai' | 'openrouter' | 'fireworks'
 
 export const LLM_PROVIDER_LABELS: Record<LLMProvider, string> = {
     openai: 'OpenAI',
     anthropic: 'Anthropic',
     gemini: 'Google Gemini',
+    together_ai: 'Together AI',
     openrouter: 'OpenRouter',
     fireworks: 'Fireworks',
 }
@@ -51,6 +52,9 @@ export function normalizeLLMProvider(provider: string | undefined): LLMProvider 
     const normalized = provider.trim().toLowerCase()
     if (normalized === 'google' || normalized === 'google-ai-studio') {
         return 'gemini'
+    }
+    if (normalized === 'together' || normalized === 'together ai' || normalized === 'together-ai') {
+        return 'together_ai'
     }
 
     return normalized in LLM_PROVIDER_LABELS ? (normalized as LLMProvider) : null

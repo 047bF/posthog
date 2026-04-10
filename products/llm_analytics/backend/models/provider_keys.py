@@ -10,6 +10,7 @@ class LLMProvider(models.TextChoices):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+    TOGETHER_AI = "together_ai", "Together AI"
     OPENROUTER = "openrouter"
     FIREWORKS = "fireworks"
 
