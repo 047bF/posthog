@@ -311,6 +311,11 @@ class SignupIPThrottle(IPThrottle):
     rate = "5/day"
 
 
+class PartnerRegistrationIPThrottle(IPThrottle):
+    scope = "partner_registration_ip"
+    rate = "3/day"
+
+
 class WebAuthnSignupRegistrationThrottle(IPThrottle):
     """
     Rate limit passkey signup registrations by IP address to avoid a single IP address from initiating too many signups.

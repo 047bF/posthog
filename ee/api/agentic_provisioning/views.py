@@ -55,6 +55,12 @@ from ee.settings import BILLING_SERVICE_URL
 from . import AUTH_CODE_CACHE_PREFIX, PENDING_AUTH_CACHE_PREFIX
 from .authentication import ProvisioningAuthentication
 from .region_proxy import stripe_region_proxy
+from .registration import (
+    DEFAULT_PARTNER_RATE_LIMIT_ACCOUNT_REQUESTS,
+    DEFAULT_PARTNER_RATE_LIMIT_RESOURCE_CREATES,
+    DEFAULT_PARTNER_RATE_LIMIT_TOKEN_EXCHANGES,
+    check_partner_rate_limit,
+)
 from .signature import SUPPORTED_VERSIONS, verify_api_version, verify_stripe_signature
 
 logger = structlog.get_logger(__name__)
@@ -338,6 +344,11 @@ def account_requests(request: Request) -> Response:
             status=403,
         )
 
+    # Per-partner rate limit on account requests
+    if partner and partner.is_provisioning_partner:
+        limit = partner.provisioning_rate_limit_account_requests or DEFAULT_PARTNER_RATE_LIMIT_ACCOUNT_REQUESTS
+        if rate_error := check_partner_rate_limit(partner, "account_requests", limit):
+            return rate_error
     # PKCE: capture code_challenge for later verification
     code_challenge = data.get("code_challenge", "")
     code_challenge_method = data.get("code_challenge_method", "S256")
@@ -720,6 +731,12 @@ def _exchange_authorization_code(request: Request) -> Response:
 
     # Use partner's OAuth app if available, fall back to Stripe
     oauth_app = _get_oauth_app_for_code(code_data)
+
+    # Per-partner rate limit on token exchanges
+    if oauth_app and oauth_app.is_provisioning_partner:
+        limit = oauth_app.provisioning_rate_limit_token_exchanges or DEFAULT_PARTNER_RATE_LIMIT_TOKEN_EXCHANGES
+        if rate_error := check_partner_rate_limit(oauth_app, "token_exchanges", limit):
+            return rate_error
     scope_str = " ".join(scopes) if scopes else StripeIntegration.SCOPES
 
     token_expiry = (
@@ -1032,6 +1049,12 @@ def provisioning_resources_create(request: Request) -> Response:
     if error := verify_api_version(request):
         return error
 
+    # Per-partner rate limit on resource creates
+    partner_app = access_token.application
+    if partner_app and partner_app.is_provisioning_partner:
+        limit = partner_app.provisioning_rate_limit_resource_creates or DEFAULT_PARTNER_RATE_LIMIT_RESOURCE_CREATES
+        if rate_error := check_partner_rate_limit(partner_app, "resource_creates", limit):
+            return rate_error
     service_id = request.data.get("service_id", "")
     if service_id and service_id not in VALID_SERVICE_IDS:
         _capture_provisioning_event("resource_created", "error", error_code="unknown_service")
