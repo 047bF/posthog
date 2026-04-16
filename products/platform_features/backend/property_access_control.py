@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from enum import Enum
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from posthog.models import OrganizationMembership
 
+from products.platform_features.backend.facade.contracts import PropertyAccessLevel
 from products.platform_features.backend.models.property_access_control import PropertyAccessControl
 
 if TYPE_CHECKING:
@@ -14,14 +14,16 @@ if TYPE_CHECKING:
     from products.event_definitions.backend.models.property_definition import PropertyDefinition
 
 
-class PropertyAccessLevel(Enum):
-    READ_WRITE = "read_write"
-    READ = "read"
-    NONE = "none"
-
-    def grants_access(self) -> bool:
-        """Returns True if this level allows the property to be read in queries."""
-        return self in (PropertyAccessLevel.READ_WRITE, PropertyAccessLevel.READ)
+# Re-exported for legacy callers; canonical definition lives in facade.contracts.
+__all__ = [
+    "PropertyAccessLevel",
+    "get_default_access_level",
+    "get_non_writable_property_names",
+    "get_property_access_level",
+    "get_restricted_properties_for_team",
+    "get_restricted_property_names",
+    "strip_restricted_properties",
+]
 
 
 def get_default_access_level() -> PropertyAccessLevel:

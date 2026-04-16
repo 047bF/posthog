@@ -1,157 +1,124 @@
+"""
+DRF views for platform_features.
+
+Responsibilities:
+- Validate incoming JSON (via serializers)
+- Convert JSON to DTOs
+- Call facade methods
+- Convert DTOs to JSON responses
+
+No business logic or ORM access here — that belongs in the facade / logic layer.
+"""
+
 from typing import Any
 
-from drf_spectacular.utils import extend_schema
-from rest_framework import serializers, status
+from drf_spectacular.utils import OpenApiParameter, extend_schema
+from rest_framework import status
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 
 from posthog.api.routing import TeamAndOrgViewSetMixin
-from posthog.models import PropertyDefinition
 from posthog.permissions import TeamMemberStrictManagementPermission
 
-from products.platform_features.backend.models.property_access_control import PropertyAccessControl
-from products.platform_features.backend.property_access_control import PropertyAccessLevel
-
-
-class PropertyAccessControlSerializer(serializers.ModelSerializer):
-    """Serializer for individual property access control rules."""
-
-    access_level = serializers.ChoiceField(
-        choices=[(e.value, e.value) for e in PropertyAccessLevel],
-        help_text="The access level for this rule.",
-    )
-
-    class Meta:
-        model = PropertyAccessControl
-        fields = [
-            "id",
-            "access_level",
-            "organization_member",
-            "role",
-            "created_by",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "created_by", "created_at", "updated_at"]
-
-
-class PropertyAccessControlResponseSerializer(serializers.Serializer):
-    """Serializer for the full access control state of a property definition."""
-
-    access_controls = PropertyAccessControlSerializer(
-        many=True,
-        help_text="List of all access control rules for this property definition.",
-    )
-    available_access_levels = serializers.ListField(
-        child=serializers.CharField(),
-        help_text="Available access levels that can be assigned.",
-    )
-    default_access_level = serializers.CharField(
-        help_text="The default access level when no rules match.",
-    )
-
-
-class PropertyAccessControlUpdateSerializer(serializers.Serializer):
-    """Serializer for creating or updating a property access control rule."""
-
-    access_level = serializers.ChoiceField(
-        choices=[(e.value, e.value) for e in PropertyAccessLevel],
-        allow_null=True,
-        help_text="The access level to set. Use null to delete an override.",
-    )
-    organization_member = serializers.UUIDField(
-        required=False,
-        allow_null=True,
-        default=None,
-        help_text="The organization member UUID to set an override for.",
-    )
-    role = serializers.UUIDField(
-        required=False,
-        allow_null=True,
-        default=None,
-        help_text="The role UUID to set an override for.",
-    )
+from ..facade import api
+from ..facade.contracts import DeletePropertyAccessControlInput, PropertyAccessLevel, UpsertPropertyAccessControlInput
+from .serializers import (
+    PropertyAccessControlRuleSerializer,
+    PropertyAccessControlStateSerializer,
+    PropertyAccessControlUpdateSerializer,
+)
 
 
 class PropertyAccessControlViewSet(TeamAndOrgViewSetMixin, GenericViewSet):
     """
     Manages property-level access control rules for property definitions.
 
-    Nested under `/api/projects/{project_id}/property_definitions/{property_definition_id}/property_access_controls/`.
+    Mounted at `/api/projects/{project_id}/property_access_controls/`. The target
+    property definition is provided via the `property_definition_id` query parameter
+    on GET requests and in the request body on POST requests.
     """
 
     scope_object = "property_definition"
-    serializer_class = PropertyAccessControlSerializer
+    serializer_class = PropertyAccessControlRuleSerializer
     permission_classes = [TeamMemberStrictManagementPermission]
 
-    def _get_property_definition(self) -> PropertyDefinition:
-        return PropertyDefinition.objects.get(
-            id=self.kwargs["property_definition_id"],
-            team_id=self.team_id,
-        )
-
     @extend_schema(
-        responses={200: PropertyAccessControlResponseSerializer},
+        parameters=[
+            OpenApiParameter(
+                name="property_definition_id",
+                description="The property definition ID to fetch access control rules for.",
+                required=True,
+                type=str,
+            ),
+        ],
+        responses={200: PropertyAccessControlStateSerializer},
         description="Get all property access control rules for a property definition.",
     )
     def list(self, request: Request, *args: Any, **kwargs: Any) -> Response:
-        prop_def = self._get_property_definition()
-        rules = PropertyAccessControl.objects.filter(
-            team_id=self.team_id,
-            property_definition=prop_def,
-        ).select_related("organization_member", "role", "created_by")
+        property_definition_id = request.query_params.get("property_definition_id")
+        if not property_definition_id:
+            raise ValidationError({"property_definition_id": "This query parameter is required."})
 
-        # compute the default level (the rule with null membership and null role)
-        default_rule = rules.filter(organization_member__isnull=True, role__isnull=True).first()
-        default_level = default_rule.access_level if default_rule else PropertyAccessLevel.READ_WRITE.value
+        try:
+            state = api.get_property_access_state(
+                team_id=self.team_id,
+                property_definition_id=property_definition_id,
+            )
+        except api.PropertyDefinitionNotFoundError:
+            raise NotFound("Property definition not found.")
 
-        return Response(
-            {
-                "access_controls": PropertyAccessControlSerializer(rules, many=True).data,
-                "available_access_levels": [e.value for e in PropertyAccessLevel],
-                "default_access_level": default_level,
-            }
-        )
+        return Response(PropertyAccessControlStateSerializer(state).data)
 
     @extend_schema(
         request=PropertyAccessControlUpdateSerializer,
-        responses={200: PropertyAccessControlSerializer},
+        responses={200: PropertyAccessControlRuleSerializer},
         description="Create or update a property access control rule. Send access_level=null to delete an override.",
     )
     def create(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         serializer = PropertyAccessControlUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
 
-        prop_def = self._get_property_definition()
-        access_level = serializer.validated_data["access_level"]
-        org_member_id = serializer.validated_data.get("organization_member")
-        role_id = serializer.validated_data.get("role")
+        property_definition_id = data["property_definition_id"]
+        raw_access_level = data["access_level"]
+        org_member_id = data.get("organization_member")
+        role_id = data.get("role")
 
-        # Build the lookup for upsert
-        lookup = {
-            "team_id": self.team_id,
-            "property_definition": prop_def,
-            "organization_member_id": org_member_id,
-            "role_id": role_id,
-        }
-
-        if access_level is None:
+        if raw_access_level is None:
             # Delete the override
-            deleted, _ = PropertyAccessControl.objects.filter(**lookup).delete()
-            if deleted:
-                return Response(status=status.HTTP_204_NO_CONTENT)
-            return Response(status=status.HTTP_404_NOT_FOUND)
+            try:
+                api.delete_property_access_control(
+                    team_id=self.team_id,
+                    input=DeletePropertyAccessControlInput(
+                        property_definition_id=property_definition_id,
+                        organization_member_id=org_member_id,
+                        role_id=role_id,
+                    ),
+                )
+            except api.PropertyDefinitionNotFoundError:
+                raise NotFound("Property definition not found.")
+            except api.PropertyAccessControlRuleNotFoundError:
+                return Response(status=status.HTTP_404_NOT_FOUND)
+            return Response(status=status.HTTP_204_NO_CONTENT)
 
-        rule, _created = PropertyAccessControl.objects.update_or_create(
-            **lookup,
-            defaults={
-                "access_level": access_level,
-                "created_by": request.user if request.user.is_authenticated else None,
-            },
-        )
+        created_by_id: int | None = request.user.pk if request.user.is_authenticated else None
+        try:
+            rule = api.upsert_property_access_control(
+                team_id=self.team_id,
+                created_by_id=created_by_id,
+                input=UpsertPropertyAccessControlInput(
+                    property_definition_id=property_definition_id,
+                    access_level=PropertyAccessLevel(raw_access_level),
+                    organization_member_id=org_member_id,
+                    role_id=role_id,
+                ),
+            )
+        except api.PropertyDefinitionNotFoundError:
+            raise NotFound("Property definition not found.")
 
         return Response(
-            PropertyAccessControlSerializer(rule).data,
+            PropertyAccessControlRuleSerializer(rule).data,
             status=status.HTTP_200_OK,
         )
