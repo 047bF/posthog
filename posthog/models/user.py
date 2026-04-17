@@ -240,7 +240,11 @@ class User(AbstractUser, UUIDTClassicModel, ModelActivityMixin):
 
     objects: UserManager = UserManager()
 
-    class Meta(AbstractUser.Meta):
+    class Meta:
+        # We intentionally do not inherit from AbstractUser.Meta because it declares
+        # abstract = True, which would make this concrete model abstract as well.
+        verbose_name = AbstractUser._meta.verbose_name
+        verbose_name_plural = AbstractUser._meta.verbose_name_plural
         indexes = [
             models.Index(
                 fields=["onboarding_delegated_to_invite"],
