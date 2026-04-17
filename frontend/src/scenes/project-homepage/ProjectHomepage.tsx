@@ -18,6 +18,7 @@ import { projectHomepageLogic } from 'scenes/project-homepage/projectHomepageLog
 import { Scene, SceneExport } from 'scenes/sceneTypes'
 import { inviteLogic } from 'scenes/settings/organization/inviteLogic'
 import { urls } from 'scenes/urls'
+import { userLogic } from 'scenes/userLogic'
 
 import { navigationLogic } from '~/layout/navigation/navigationLogic'
 import { SceneContent } from '~/layout/scenes/components/SceneContent'
@@ -25,6 +26,7 @@ import { SceneTitleSection } from '~/layout/scenes/components/SceneTitleSection'
 import { DashboardPlacement } from '~/types'
 
 import { AiFirstHomepage } from './ai-first/AiFirstHomepage'
+import { OnboardingWaitingForTeammate } from './OnboardingWaitingForTeammate'
 
 export const scene: SceneExport = {
     component: ProjectHomepage,
@@ -106,6 +108,13 @@ function HomePageContent(): JSX.Element {
 export function ProjectHomepage(): JSX.Element {
     const { dashboardLogicProps } = useValues(projectHomepageLogic)
     const isAIFirst = useFeatureFlag('AI_FIRST')
+    const { user } = useValues(userLogic)
+
+    // If the current user has handed off onboarding to a teammate and is waiting for them to accept,
+    // replace the default empty landing state with a dedicated "waiting for teammate" view.
+    if (user?.onboarding_delegated_to_invite && !user?.onboarding_delegation_accepted_at) {
+        return <OnboardingWaitingForTeammate />
+    }
 
     if (isAIFirst) {
         return (
