@@ -29,7 +29,7 @@ import type {
     PaginatedCommentListApi,
     PaginatedOrganizationListApi,
     PaginatedOrganizationMemberListApi,
-    PaginatedPropertyAccessControlResponseListApi,
+    PaginatedPropertyAccessControlStateListApi,
     PaginatedRoleListApi,
     PaginatedRoleMembershipListApi,
     PatchedApprovalPolicyApi,
@@ -37,7 +37,7 @@ import type {
     PatchedOrganizationApi,
     PatchedOrganizationMemberApi,
     PatchedRoleApi,
-    PropertyAccessControlApi,
+    PropertyAccessControlRuleApi,
     PropertyAccessControlUpdateApi,
     PropertyAccessControlsListParams,
     RoleApi,
@@ -881,14 +881,11 @@ export const propertyAccessControlsList = async (
     projectId: string,
     params: PropertyAccessControlsListParams,
     options?: RequestInit
-): Promise<PaginatedPropertyAccessControlResponseListApi> => {
-    return apiMutator<PaginatedPropertyAccessControlResponseListApi>(
-        getPropertyAccessControlsListUrl(projectId, params),
-        {
-            ...options,
-            method: 'GET',
-        }
-    )
+): Promise<PaginatedPropertyAccessControlStateListApi> => {
+    return apiMutator<PaginatedPropertyAccessControlStateListApi>(getPropertyAccessControlsListUrl(projectId, params), {
+        ...options,
+        method: 'GET',
+    })
 }
 
 /**
@@ -902,8 +899,8 @@ export const propertyAccessControlsCreate = async (
     projectId: string,
     propertyAccessControlUpdateApi: PropertyAccessControlUpdateApi,
     options?: RequestInit
-): Promise<PropertyAccessControlApi> => {
-    return apiMutator<PropertyAccessControlApi>(getPropertyAccessControlsCreateUrl(projectId), {
+): Promise<PropertyAccessControlRuleApi> => {
+    return apiMutator<PropertyAccessControlRuleApi>(getPropertyAccessControlsCreateUrl(projectId), {
         ...options,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...options?.headers },

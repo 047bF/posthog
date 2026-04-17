@@ -21730,9 +21730,9 @@ export namespace Schemas {
     }
 
     /**
-     * Serializer for individual property access control rules.
+     * Serializes a single access control rule DTO.
      */
-    export interface PropertyAccessControl {
+    export interface PropertyAccessControlRule {
       readonly id: string;
       /** The access level for this rule.
 
@@ -21740,10 +21740,16 @@ export namespace Schemas {
     * `read` - read
     * `none` - none */
       access_level: AccessLevelEnum;
-      /** @nullable */
-      organization_member?: string | null;
-      /** @nullable */
-      role?: string | null;
+      /**
+       * The organization member UUID this rule applies to, if any.
+       * @nullable
+       */
+      organization_member: string | null;
+      /**
+       * The role UUID this rule applies to, if any.
+       * @nullable
+       */
+      role: string | null;
       /** @nullable */
       readonly created_by: number | null;
       readonly created_at: string;
@@ -21751,24 +21757,27 @@ export namespace Schemas {
     }
 
     /**
-     * Serializer for the full access control state of a property definition.
+     * Serializes the aggregate state for a property definition.
+
+    Preserves the existing API shape: ``access_controls`` is the list
+    of rules, plus the available levels and the computed default.
      */
-    export interface PropertyAccessControlResponse {
+    export interface PropertyAccessControlState {
       /** List of all access control rules for this property definition. */
-      access_controls: PropertyAccessControl[];
+      access_controls: PropertyAccessControlRule[];
       /** Available access levels that can be assigned. */
       available_access_levels: string[];
       /** The default access level when no rules match. */
       default_access_level: string;
     }
 
-    export interface PaginatedPropertyAccessControlResponseList {
+    export interface PaginatedPropertyAccessControlStateList {
       count: number;
       /** @nullable */
       next?: string | null;
       /** @nullable */
       previous?: string | null;
-      results: PropertyAccessControlResponse[];
+      results: PropertyAccessControlState[];
     }
 
     export interface QueryTabState {
@@ -28223,7 +28232,9 @@ export namespace Schemas {
     }
 
     /**
-     * Serializer for creating or updating a property access control rule.
+     * Request body for upserting or deleting a rule.
+
+    Sending ``access_level=null`` deletes the matching override.
      */
     export interface PropertyAccessControlUpdate {
       /** The property definition ID this rule applies to. */

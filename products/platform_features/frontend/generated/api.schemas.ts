@@ -614,9 +614,9 @@ export const AccessLevelEnumApi = {
 } as const
 
 /**
- * Serializer for individual property access control rules.
+ * Serializes a single access control rule DTO.
  */
-export interface PropertyAccessControlApi {
+export interface PropertyAccessControlRuleApi {
     readonly id: string
     /** The access level for this rule.
 
@@ -624,10 +624,16 @@ export interface PropertyAccessControlApi {
 * `read` - read
 * `none` - none */
     access_level: AccessLevelEnumApi
-    /** @nullable */
-    organization_member?: string | null
-    /** @nullable */
-    role?: string | null
+    /**
+     * The organization member UUID this rule applies to, if any.
+     * @nullable
+     */
+    organization_member: string | null
+    /**
+     * The role UUID this rule applies to, if any.
+     * @nullable
+     */
+    role: string | null
     /** @nullable */
     readonly created_by: number | null
     readonly created_at: string
@@ -635,28 +641,33 @@ export interface PropertyAccessControlApi {
 }
 
 /**
- * Serializer for the full access control state of a property definition.
+ * Serializes the aggregate state for a property definition.
+
+Preserves the existing API shape: ``access_controls`` is the list
+of rules, plus the available levels and the computed default.
  */
-export interface PropertyAccessControlResponseApi {
+export interface PropertyAccessControlStateApi {
     /** List of all access control rules for this property definition. */
-    access_controls: PropertyAccessControlApi[]
+    access_controls: PropertyAccessControlRuleApi[]
     /** Available access levels that can be assigned. */
     available_access_levels: string[]
     /** The default access level when no rules match. */
     default_access_level: string
 }
 
-export interface PaginatedPropertyAccessControlResponseListApi {
+export interface PaginatedPropertyAccessControlStateListApi {
     count: number
     /** @nullable */
     next?: string | null
     /** @nullable */
     previous?: string | null
-    results: PropertyAccessControlResponseApi[]
+    results: PropertyAccessControlStateApi[]
 }
 
 /**
- * Serializer for creating or updating a property access control rule.
+ * Request body for upserting or deleting a rule.
+
+Sending ``access_level=null`` deletes the matching override.
  */
 export interface PropertyAccessControlUpdateApi {
     /** The property definition ID this rule applies to. */
