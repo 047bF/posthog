@@ -112,7 +112,14 @@ export function ProjectHomepage(): JSX.Element {
 
     // If the current user has handed off onboarding to a teammate and is waiting for them to accept,
     // replace the default empty landing state with a dedicated "waiting for teammate" view.
-    if (user?.onboarding_delegated_to_invite && !user?.onboarding_delegation_accepted_at) {
+    // Scope strictly to the org where the delegation was initiated — otherwise a user who switched
+    // orgs would see the waiting screen over another org's real homepage.
+    const isWaitingForDelegate =
+        !!user?.onboarding_delegated_to_invite &&
+        !user?.onboarding_delegation_accepted_at &&
+        !!user?.onboarding_delegated_to_organization_id &&
+        user.onboarding_delegated_to_organization_id === user.organization?.id
+    if (isWaitingForDelegate) {
         return <OnboardingWaitingForTeammate />
     }
 

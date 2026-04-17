@@ -5,6 +5,7 @@ from posthog.test.base import APIBaseTest
 from unittest.mock import ANY, patch
 
 from django.core import mail
+from django.utils import timezone
 
 from parameterized import parameterized
 from rest_framework import status
@@ -1473,6 +1474,14 @@ class TestOnboardingDelegationInviteAPI(APIBaseTest):
         response = self.client.post(self._delegate_url(), {})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_delegate_rejects_malformed_email(self):
+        response = self.client.post(self._delegate_url(), {"target_email": "not-an-email"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_delegate_rejects_self_delegation(self):
+        response = self.client.post(self._delegate_url(), {"target_email": self.user.email})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_delegate_rejects_email_already_in_org(self):
         existing = User.objects.create_user(email="member@example.com", password=None, first_name="M")
         existing.join(organization=self.organization, level=OrganizationMembership.Level.MEMBER)
@@ -1480,13 +1489,17 @@ class TestOnboardingDelegationInviteAPI(APIBaseTest):
         response = self.client.post(self._delegate_url(), {"target_email": "member@example.com"})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_delegate_sends_delegation_email_template(self):
-        mail.outbox = []
-        with self.settings(EMAIL_HOST="localhost", CELERY_TASK_ALWAYS_EAGER=True):
-            response = self.client.post(self._delegate_url(), {"target_email": "engineer@example.com"})
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.content)
-        invite = OrganizationInvite.objects.get(target_email="engineer@example.com")
-        self.assertTrue(invite.emailing_attempt_made)
+    def test_delegate_rejects_when_existing_pending_invite(self):
+        # Prior non-delegation invite for this email — don't silently clobber it.
+        OrganizationInvite.objects.create(
+            organization=self.organization,
+            created_by=self.user,
+            target_email="engineer@example.com",
+            level=OrganizationMembership.Level.MEMBER,
+        )
+        response = self.client.post(self._delegate_url(), {"target_email": "engineer@example.com"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("existing_invite", str(response.content))
 
     def test_delegate_acceptance_marks_delegator_and_delegate(self):
         response = self.client.post(self._delegate_url(), {"target_email": "engineer@example.com"})
@@ -1504,7 +1517,7 @@ class TestOnboardingDelegationInviteAPI(APIBaseTest):
 
 class TestOnboardingSkipAPI(APIBaseTest):
     def _skip_url(self) -> str:
-        return f"/api/users/{self.user.uuid}/onboarding/skip/"
+        return "/api/users/@me/onboarding/skip/"
 
     def test_skip_sets_timestamp_and_reason(self):
         response = self.client.post(self._skip_url(), {"reason": "later", "step_at_skip": "install"})
@@ -1513,20 +1526,46 @@ class TestOnboardingSkipAPI(APIBaseTest):
         self.assertIsNotNone(self.user.onboarding_skipped_at)
         self.assertEqual(self.user.onboarding_skipped_reason, "later")
 
-    def test_skip_is_idempotent(self):
-        for _ in range(2):
-            response = self.client.post(self._skip_url(), {"reason": "later"})
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(User.objects.filter(pk=self.user.pk).count(), 1)
+    def test_skip_is_idempotent_preserves_first_timestamp(self):
+        response = self.client.post(self._skip_url(), {"reason": "later"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        first_ts = self.user.onboarding_skipped_at
+
+        response = self.client.post(self._skip_url(), {"reason": "later"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.onboarding_skipped_at, first_ts)
 
     def test_skip_rejects_invalid_reason(self):
         response = self.client.post(self._skip_url(), {"reason": "nope"})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_skip_other_user_forbidden(self):
-        other = User.objects.create_user(email="other@example.com", password=None, first_name="O")
-        response = self.client.post(f"/api/users/{other.uuid}/onboarding/skip/", {"reason": "later"})
-        self.assertIn(response.status_code, (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND))
+    def test_skip_rejects_delegated_reason(self):
+        # The delegate endpoint is the only path that should produce reason="delegated".
+        response = self.client.post(self._skip_url(), {"reason": "delegated"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_skip_clears_stale_delegation_fk(self):
+        # If a user previously delegated but then changes their mind to "later",
+        # clear the stale delegation link so the waiting-for-teammate UI goes away.
+        invite = OrganizationInvite.objects.create(
+            organization=self.organization,
+            created_by=self.user,
+            target_email="engineer@example.com",
+            level=OrganizationMembership.Level.ADMIN,
+            is_setup_delegation=True,
+        )
+        self.user.onboarding_delegated_to_invite = invite
+        self.user.onboarding_skipped_at = timezone.now()
+        self.user.onboarding_skipped_reason = "delegated"
+        self.user.save()
+
+        response = self.client.post(self._skip_url(), {"reason": "later"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.onboarding_delegated_to_invite_id)
+        self.assertEqual(self.user.onboarding_skipped_reason, "later")
 
 
 class TestDelegationCancellationUnsuppressesRedirect(APIBaseTest):
@@ -1535,7 +1574,7 @@ class TestDelegationCancellationUnsuppressesRedirect(APIBaseTest):
         self.organization_membership.level = OrganizationMembership.Level.ADMIN
         self.organization_membership.save()
 
-    def test_cancelling_delegation_invite_clears_delegation_link(self):
+    def test_cancelling_delegation_invite_unsuppresses_redirect(self):
         delegate_url = f"/api/organizations/{self.organization.id}/invites/delegate/"
         response = self.client.post(delegate_url, {"target_email": "engineer@example.com"})
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -1543,10 +1582,15 @@ class TestDelegationCancellationUnsuppressesRedirect(APIBaseTest):
 
         self.user.refresh_from_db()
         self.assertEqual(self.user.onboarding_delegated_to_invite_id, invite.id)
+        self.assertIsNotNone(self.user.onboarding_skipped_at)
+        self.assertEqual(self.user.onboarding_skipped_reason, "delegated")
 
         response = self.client.delete(f"/api/organizations/{self.organization.id}/invites/{invite.id}/")
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-        # SET_NULL on invite deletion un-links the delegator so the redirect can re-fire.
+        # Full redirect condition: both the FK *and* the skip timestamp/reason must be cleared
+        # so the frontend's sceneLogic suppression stops firing and onboarding re-engages.
         self.user.refresh_from_db()
         self.assertIsNone(self.user.onboarding_delegated_to_invite_id)
+        self.assertIsNone(self.user.onboarding_skipped_at)
+        self.assertIsNone(self.user.onboarding_skipped_reason)

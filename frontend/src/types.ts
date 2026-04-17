@@ -353,6 +353,7 @@ export interface UserType extends UserBaseType {
     onboarding_skipped_at?: string | null
     onboarding_skipped_reason?: 'delegated' | 'later' | 'other' | null
     onboarding_delegated_to_invite?: string | null
+    onboarding_delegated_to_organization_id?: string | null
     onboarding_delegation_accepted_at?: string | null
 }
 

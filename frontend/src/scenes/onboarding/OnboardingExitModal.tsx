@@ -12,6 +12,23 @@ export function OnboardingExitModal(): JSX.Element {
     const { closeExitModal, setTargetEmail, setMessage, submitDelegation, submitSkip, setTab } =
         useActions(onboardingExitLogic)
 
+    const onDelegateSubmit = (e: React.FormEvent): void => {
+        e.preventDefault()
+        // Skip submit while the user is mid-composition on an IME (e.g. CJK input methods).
+        if ((e.nativeEvent as any)?.isComposing) {
+            return
+        }
+        submitDelegation()
+    }
+
+    const onLaterSubmit = (e: React.FormEvent): void => {
+        e.preventDefault()
+        if ((e.nativeEvent as any)?.isComposing) {
+            return
+        }
+        submitSkip()
+    }
+
     return (
         <LemonModal
             isOpen={isExitModalOpen}
@@ -20,8 +37,10 @@ export function OnboardingExitModal(): JSX.Element {
             description="Hand off setup to a teammate, or come back to it later."
         >
             <div className="flex flex-col gap-4" data-attr="onboarding-exit-modal">
-                <div className="flex gap-2">
+                <div role="tablist" aria-label="Onboarding exit options" className="flex gap-2">
                     <LemonButton
+                        role="tab"
+                        aria-selected={tab === 'delegate'}
                         type={tab === 'delegate' ? 'primary' : 'secondary'}
                         onClick={() => setTab('delegate')}
                         data-attr="onboarding-exit-tab-delegate"
@@ -29,18 +48,20 @@ export function OnboardingExitModal(): JSX.Element {
                         Invite a teammate
                     </LemonButton>
                     <LemonButton
+                        role="tab"
+                        aria-selected={tab === 'later'}
                         type={tab === 'later' ? 'primary' : 'secondary'}
                         onClick={() => setTab('later')}
                         data-attr="onboarding-exit-tab-later"
                     >
-                        I'll finish this later
+                        Finish later
                     </LemonButton>
                 </div>
 
                 <LemonDivider />
 
                 {tab === 'delegate' && (
-                    <div className="flex flex-col gap-2">
+                    <form onSubmit={onDelegateSubmit} className="flex flex-col gap-2">
                         <label className="font-semibold" htmlFor="onboarding-exit-email">
                             Teammate's email
                         </label>
@@ -64,40 +85,43 @@ export function OnboardingExitModal(): JSX.Element {
                             data-attr="onboarding-exit-message-input"
                             minRows={3}
                         />
+                        <p className="text-secondary text-xs m-0 mt-1">
+                            Your teammate will be invited as an admin so they can finish setup.
+                        </p>
                         <div className="flex justify-end gap-2 mt-2">
-                            <LemonButton type="secondary" onClick={closeExitModal}>
+                            <LemonButton type="secondary" onClick={closeExitModal} htmlType="button">
                                 Cancel
                             </LemonButton>
                             <LemonButton
                                 type="primary"
+                                htmlType="submit"
                                 loading={isSubmitting}
                                 disabledReason={!canSubmitDelegation ? 'Enter a valid email address first' : undefined}
-                                onClick={() => submitDelegation()}
                                 data-attr="onboarding-exit-send-invitation"
                             >
                                 Send invitation
                             </LemonButton>
                         </div>
-                    </div>
+                    </form>
                 )}
 
                 {tab === 'later' && (
-                    <div className="flex flex-col gap-3">
-                        <p className="m-0">You can finish setup anytime from Settings.</p>
+                    <form onSubmit={onLaterSubmit} className="flex flex-col gap-3">
+                        <p className="m-0">You can finish setup anytime from your settings.</p>
                         <div className="flex justify-end gap-2">
-                            <LemonButton type="secondary" onClick={closeExitModal}>
+                            <LemonButton type="secondary" onClick={closeExitModal} htmlType="button">
                                 Cancel
                             </LemonButton>
                             <LemonButton
                                 type="primary"
+                                htmlType="submit"
                                 loading={isSubmitting}
-                                onClick={() => submitSkip()}
                                 data-attr="onboarding-exit-skip-for-now"
                             >
                                 Skip for now
                             </LemonButton>
                         </div>
-                    </div>
+                    </form>
                 )}
             </div>
         </LemonModal>

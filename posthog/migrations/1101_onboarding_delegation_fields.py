@@ -31,6 +31,7 @@ class Migration(migrations.Migration):
                 on_delete=models.SET_NULL,
                 related_name="delegating_users",
                 to="posthog.organizationinvite",
+                db_index=False,
             ),
         ),
         migrations.AddField(

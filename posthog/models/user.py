@@ -223,6 +223,7 @@ class User(AbstractUser, UUIDTClassicModel, ModelActivityMixin):
         null=True,
         blank=True,
         related_name="delegating_users",
+        db_index=False,
     )
     onboarding_delegation_accepted_at = models.DateTimeField(null=True, blank=True)
 
@@ -238,6 +239,14 @@ class User(AbstractUser, UUIDTClassicModel, ModelActivityMixin):
     username = None
 
     objects: UserManager = UserManager()
+
+    class Meta(AbstractUser.Meta):
+        indexes = [
+            models.Index(
+                fields=["onboarding_delegated_to_invite"],
+                name="posthog_user_onboarding_deleg_idx",
+            ),
+        ]
 
     # Reverse relation from social_django.UserSocialAuth.user (related_name="social_auth"); not a DB column.
     if TYPE_CHECKING:
