@@ -63,7 +63,7 @@ def _validate_callback_url(url: str) -> str | None:
         try:
             resolved = socket.getaddrinfo(parsed.hostname, None)
             for _, _, _, _, sockaddr in resolved:
-                ip_str = sockaddr[0]
+                ip_str = str(sockaddr[0])
                 if _is_private_ip(ip_str):
                     return "Callback URL resolves to a private/internal IP address"
         except socket.gaierror:
