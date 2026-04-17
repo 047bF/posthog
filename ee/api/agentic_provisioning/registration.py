@@ -16,7 +16,6 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from posthog.exceptions_capture import capture_exception
-from posthog.models.activity_logging.activity_log import Detail, log_activity
 from posthog.models.oauth import OAuthApplication
 from posthog.rate_limit import PartnerRegistrationIPThrottle
 
@@ -57,7 +56,7 @@ def _validate_callback_url(url: str) -> str | None:
     if not is_loopback and parsed.scheme != "https":
         return "Only https:// URLs are allowed (except localhost for development)"
 
-    if parsed.hostname and not is_loopback and _is_private_ip(parsed.hostname):
+    if parsed.hostname and not is_loopback and _is_private_ip(str(parsed.hostname)):
         return "Callback URL must not point to a private/internal IP address"
 
     if parsed.hostname and not is_loopback:
@@ -171,17 +170,6 @@ def provisioning_register(request: Request) -> Response:
         partner_type=partner_type,
         auth_method=auth_method,
         app_id=str(app.id),
-    )
-
-    log_activity(
-        organization_id=None,
-        team_id=None,
-        user=None,
-        was_impersonated=False,
-        item_id=str(app.id),
-        scope="OAuthApplication",
-        activity="registered",
-        detail=Detail(name=name),
     )
 
     response_data: dict[str, Any] = {
