@@ -444,9 +444,12 @@ class OrganizationInviteViewSet(
                 invite.save(update_fields=["emailing_attempt_made"])
                 # Queue email after commit so SMTP latency doesn't block the request and
                 # a broker/SMTP failure doesn't 500 after committing delegator state.
-                transaction.on_commit(
-                    lambda invite_id=invite.id: send_invite.apply_async(kwargs={"invite_id": invite_id})
-                )
+                invite_id = invite.id
+
+                def _queue_delegation_email() -> None:
+                    send_invite.apply_async(kwargs={"invite_id": invite_id})
+
+                transaction.on_commit(_queue_delegation_email)
 
         if user.distinct_id:
             try:
