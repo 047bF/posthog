@@ -23,8 +23,10 @@ import type {
     InvitesListParams,
     List2Params,
     OauthApplicationsListParams,
+    OnboardingSkipRequestApi,
     OrganizationDomainApi,
     OrganizationInviteApi,
+    OrganizationInviteDelegateApi,
     PaginatedEnterprisePropertyDefinitionListApi,
     PaginatedExportedAssetListApi,
     PaginatedFileSystemListApi,
@@ -347,6 +349,27 @@ export const invitesBulkCreate = async (
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...options?.headers },
         body: JSON.stringify(organizationInviteApi),
+    })
+}
+
+/**
+ * Create an onboarding delegation invite: an admin-level invite flagged as a setup delegation.
+Sends a single dedicated delegation email and records the inviting user as having delegated.
+ */
+export const getInvitesDelegateCreateUrl = (organizationId: string) => {
+    return `/api/organizations/${organizationId}/invites/delegate/`
+}
+
+export const invitesDelegateCreate = async (
+    organizationId: string,
+    organizationInviteDelegateApi: OrganizationInviteDelegateApi,
+    options?: RequestInit
+): Promise<OrganizationInviteApi> => {
+    return apiMutator<OrganizationInviteApi>(getInvitesDelegateCreateUrl(organizationId), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(organizationInviteDelegateApi),
     })
 }
 
@@ -1901,6 +1924,31 @@ export const usersCancelEmailChangeRequestPartialUpdate = async (
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...options?.headers },
         body: JSON.stringify(patchedUserApi),
+    })
+}
+
+/**
+ * Mark the current user as having exited onboarding with a non-delegated reason.
+Idempotent: the skip timestamp is only set on the first successful call.
+
+Callers wanting to delegate setup to a teammate must use the dedicated
+/organizations/{id}/invites/delegate/ endpoint, which atomically creates the
+invite and sets reason="delegated". This endpoint rejects that reason so state
+can't be faked without a real invite.
+ */
+export const getUsersOnboardingSkipCreateUrl = () => {
+    return `/api/users/onboarding/skip/`
+}
+
+export const usersOnboardingSkipCreate = async (
+    onboardingSkipRequestApi: OnboardingSkipRequestApi,
+    options?: RequestInit
+): Promise<void> => {
+    return apiMutator<void>(getUsersOnboardingSkipCreateUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(onboardingSkipRequestApi),
     })
 }
 
