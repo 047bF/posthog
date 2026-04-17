@@ -1439,9 +1439,18 @@ class TestOnboardingDelegationInviteAPI(APIBaseTest):
     def setUp(self):
         super().setUp()
         set_instance_setting("EMAIL_HOST", "localhost")
+        # Delegation grants ADMIN-level access on accept; the caller must themselves hold ADMIN+.
+        self.organization_membership.level = OrganizationMembership.Level.ADMIN
+        self.organization_membership.save()
 
     def _delegate_url(self) -> str:
         return f"/api/organizations/{self.organization.id}/invites/delegate/"
+
+    def test_delegate_rejects_non_admin(self):
+        self.organization_membership.level = OrganizationMembership.Level.MEMBER
+        self.organization_membership.save()
+        response = self.client.post(self._delegate_url(), {"target_email": "engineer@example.com"})
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     @patch("posthoganalytics.capture")
     def test_delegate_creates_admin_level_invite_with_flag(self, _mock_capture):
@@ -1521,6 +1530,11 @@ class TestOnboardingSkipAPI(APIBaseTest):
 
 
 class TestDelegationCancellationUnsuppressesRedirect(APIBaseTest):
+    def setUp(self):
+        super().setUp()
+        self.organization_membership.level = OrganizationMembership.Level.ADMIN
+        self.organization_membership.save()
+
     def test_cancelling_delegation_invite_clears_delegation_link(self):
         delegate_url = f"/api/organizations/{self.organization.id}/invites/delegate/"
         response = self.client.post(delegate_url, {"target_email": "engineer@example.com"})
@@ -1530,9 +1544,6 @@ class TestDelegationCancellationUnsuppressesRedirect(APIBaseTest):
         self.user.refresh_from_db()
         self.assertEqual(self.user.onboarding_delegated_to_invite_id, invite.id)
 
-        # Cancel (delete) the invite as an admin
-        self.organization_membership.level = OrganizationMembership.Level.ADMIN
-        self.organization_membership.save()
         response = self.client.delete(f"/api/organizations/{self.organization.id}/invites/{invite.id}/")
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 

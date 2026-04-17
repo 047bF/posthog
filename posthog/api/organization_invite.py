@@ -380,6 +380,18 @@ class OrganizationInviteViewSet(
         message = (request.data or {}).get("message") or ""
         step_at_delegation = (request.data or {}).get("step_at_delegation") or ""
 
+        # Delegation invites grant ADMIN-level access on accept, so the caller must themselves
+        # hold ADMIN or higher. Without this check, regular members could escalate an unrelated
+        # account to admin via a delegation invite on orgs that allow members to invite.
+        try:
+            membership = OrganizationMembership.objects.get(organization_id=self.organization_id, user=user)
+        except OrganizationMembership.DoesNotExist:
+            raise exceptions.PermissionDenied("You must be a member of the organization to delegate setup.")
+        if membership.level < OrganizationMembership.Level.ADMIN:
+            raise exceptions.PermissionDenied(
+                "Only organization admins can delegate setup, as delegation grants admin access."
+            )
+
         if not target_email:
             raise exceptions.ValidationError({"target_email": "This field is required."})
         target_email = EmailNormalizer.normalize(target_email)

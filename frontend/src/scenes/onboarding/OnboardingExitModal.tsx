@@ -1,5 +1,4 @@
 import { useActions, useValues } from 'kea'
-import { useState } from 'react'
 
 import { LemonButton, LemonDivider, LemonInput, LemonTextArea } from '@posthog/lemon-ui'
 
@@ -7,14 +6,11 @@ import { LemonModal } from 'lib/lemon-ui/LemonModal'
 
 import { onboardingExitLogic } from './onboardingExitLogic'
 
-type Tab = 'delegate' | 'later'
-
 export function OnboardingExitModal(): JSX.Element {
-    const { isExitModalOpen, targetEmail, message, canSubmitDelegation, delegationInviteLoading } =
+    const { isExitModalOpen, targetEmail, message, canSubmitDelegation, isSubmitting, tab } =
         useValues(onboardingExitLogic)
-    const { closeExitModal, setTargetEmail, setMessage, submitDelegation, submitSkip } = useActions(onboardingExitLogic)
-
-    const [tab, setTab] = useState<Tab>('delegate')
+    const { closeExitModal, setTargetEmail, setMessage, submitDelegation, submitSkip, setTab } =
+        useActions(onboardingExitLogic)
 
     return (
         <LemonModal
@@ -74,7 +70,7 @@ export function OnboardingExitModal(): JSX.Element {
                             </LemonButton>
                             <LemonButton
                                 type="primary"
-                                loading={delegationInviteLoading}
+                                loading={isSubmitting}
                                 disabledReason={!canSubmitDelegation ? 'Enter a valid email address first' : undefined}
                                 onClick={() => submitDelegation()}
                                 data-attr="onboarding-exit-send-invitation"
@@ -94,6 +90,7 @@ export function OnboardingExitModal(): JSX.Element {
                             </LemonButton>
                             <LemonButton
                                 type="primary"
+                                loading={isSubmitting}
                                 onClick={() => submitSkip()}
                                 data-attr="onboarding-exit-skip-for-now"
                             >
