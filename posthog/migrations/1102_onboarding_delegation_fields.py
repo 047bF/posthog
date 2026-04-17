@@ -2,10 +2,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-    # Adding new nullable columns + a default-false boolean to posthog_user and
-    # posthog_organizationinvite. All ops are metadata-only in PostgreSQL 11+, so
-    # this is safe under lock_timeout. The FK's concurrent index ships in 1103.
-
     dependencies = [
         ("posthog", "1101_activitylog_client"),
     ]
@@ -35,7 +31,6 @@ class Migration(migrations.Migration):
                 on_delete=models.SET_NULL,
                 related_name="delegating_users",
                 to="posthog.organizationinvite",
-                db_index=False,
             ),
         ),
         migrations.AddField(
