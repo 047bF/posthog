@@ -218,12 +218,13 @@ def send_invite(invite_id: str) -> None:
     invite: OrganizationInvite = OrganizationInvite.objects.select_related("created_by", "organization").get(
         id=invite_id
     )
+    inviter_name = invite.created_by.first_name if invite.created_by else "someone"
     is_delegation = bool(invite.is_setup_delegation)
     template_name = "delegation_invite" if is_delegation else "invite"
     if is_delegation:
-        subject = f"{invite.created_by.first_name} wants you to set up PostHog for {invite.organization.name}"
+        subject = f"{inviter_name} wants you to set up PostHog for {invite.organization.name}"
     else:
-        subject = f"{invite.created_by.first_name} invited you to join {invite.organization.name} on PostHog"
+        subject = f"{inviter_name} invited you to join {invite.organization.name} on PostHog"
 
     message = EmailMessage(
         use_http=True,
@@ -235,13 +236,15 @@ def send_invite(invite_id: str) -> None:
             "expiry_date": (timezone.now() + datetime.timedelta(days=INVITE_DAYS_VALIDITY)).strftime(
                 "%B %d, %Y at %H:%M %Z"
             ),
-            "inviter_first_name": invite.created_by.first_name if invite.created_by else "someone",
+            "inviter_first_name": inviter_name,
             "organization_name": invite.organization.name,
             "url": f"{settings.SITE_URL}/signup/{invite_id}",
         },
         reply_to=invite.created_by.email if invite.created_by and invite.created_by.email else "",
     )
     # Using invite_id that will be aliased to user.distinct_id after invite is accepted
+    if invite.target_email is None:
+        return
     message.add_recipient(email=invite.target_email, distinct_id=f"invite_{invite_id}")
     message.send()
 
@@ -275,6 +278,26 @@ def send_member_join(invitee_uuid: str, organization_id: str) -> None:
     for user in members_to_email:
         message.add_user_recipient(user)
     message.send()
+
+
+@shared_task(**EMAIL_TASK_KWARGS)
+def send_provisioning_welcome(user_id: int, token: str, partner_name: str = "") -> None:
+    user = User.objects.get(pk=user_id)
+    message = EmailMessage(
+        use_http=True,
+        campaign_key=f"provisioning-welcome-{user.uuid}-{timezone.now().timestamp()}",
+        subject="Welcome to PostHog - set your password",
+        template_name="provisioning_welcome",
+        template_context={
+            "preheader": "Your PostHog account is ready. Set your password to log in.",
+            "link": f"/reset/{user.uuid}/{token}",
+            "cloud": is_cloud(),
+            "site_url": settings.SITE_URL,
+            "partner_name": partner_name,
+        },
+    )
+    message.add_user_recipient(user)
+    message.send(send_async=False)
 
 
 @shared_task(**EMAIL_TASK_KWARGS)
