@@ -2,10 +2,12 @@ from datetime import datetime, timedelta
 from typing import Any, Optional, cast
 from uuid import UUID
 
+from django.db import transaction
 from django.db.models import QuerySet
+from django.utils import timezone
 
 import posthoganalytics
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import exceptions, mixins, permissions, request, response, serializers, status, viewsets
 
 from posthog.api.routing import TeamAndOrgViewSetMixin
@@ -349,6 +351,90 @@ class OrganizationInviteViewSet(
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
+        return response.Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        request=inline_serializer(
+            name="OrganizationInviteDelegateRequest",
+            fields={
+                "target_email": serializers.EmailField(required=True),
+                "message": serializers.CharField(required=False, allow_blank=True),
+                "step_at_delegation": serializers.CharField(required=False, allow_blank=True),
+            },
+        ),
+        responses=OrganizationInviteSerializer,
+    )
+    @action(
+        methods=["POST"],
+        detail=False,
+        required_scopes=["organization_member:write"],
+        permission_classes=[UserCanInvitePermission],
+    )
+    def delegate(self, request: request.Request, **kwargs) -> response.Response:
+        """
+        Create an onboarding delegation invite: an admin-level invite flagged as a setup delegation.
+        Sends a single dedicated delegation email and records the inviting user as having delegated.
+        """
+        user = cast(User, self.request.user)
+        target_email = (request.data or {}).get("target_email")
+        message = (request.data or {}).get("message") or ""
+        step_at_delegation = (request.data or {}).get("step_at_delegation") or ""
+
+        if not target_email:
+            raise exceptions.ValidationError({"target_email": "This field is required."})
+        target_email = EmailNormalizer.normalize(target_email)
+
+        if OrganizationMembership.objects.filter(
+            organization_id=self.organization_id,
+            user__email__iexact=target_email,
+        ).exists():
+            raise exceptions.ValidationError(
+                "A user with this email address already belongs to the organization.",
+                code="existing_member",
+            )
+
+        with transaction.atomic():
+            OrganizationInviteManager.delete_existing_invites(
+                organization_id=self.organization_id, target_email=target_email
+            )
+            invite = OrganizationInvite.objects.create(
+                organization_id=self.organization_id,
+                created_by=user,
+                target_email=target_email,
+                message=message,
+                level=OrganizationMembership.Level.ADMIN,
+                is_setup_delegation=True,
+            )
+            # Transactional: link the delegator only after the invite row exists.
+            user.onboarding_delegated_to_invite = invite
+            user.onboarding_skipped_at = timezone.now()
+            user.onboarding_skipped_reason = "delegated"
+            user.save(
+                update_fields=[
+                    "onboarding_delegated_to_invite",
+                    "onboarding_skipped_at",
+                    "onboarding_skipped_reason",
+                ]
+            )
+
+        if is_email_available(with_absolute_urls=True):
+            invite.emailing_attempt_made = True
+            send_invite(invite_id=invite.id)
+            invite.save(update_fields=["emailing_attempt_made"])
+
+        if user.distinct_id:
+            posthoganalytics.capture(
+                distinct_id=str(user.distinct_id),
+                event="onboarding delegated",
+                properties={
+                    "target_email_domain": target_email.split("@")[-1] if "@" in target_email else None,
+                    "has_message": bool(message),
+                    "step_at_delegation": step_at_delegation or None,
+                    "invite_id": str(invite.id),
+                },
+            )
+
+        serializer = OrganizationInviteSerializer(invite, context=self.get_serializer_context())
         return response.Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(

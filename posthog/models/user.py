@@ -214,6 +214,18 @@ class User(AbstractUser, UUIDTClassicModel, ModelActivityMixin):
         help_text="Whether passkeys are enabled for 2FA authentication. Users can disable this to use only TOTP for 2FA while keeping passkeys for login.",
     )
 
+    # Onboarding exit tracking. Set when the user explicitly leaves the onboarding flow (skip or delegate).
+    onboarding_skipped_at = models.DateTimeField(null=True, blank=True)
+    onboarding_skipped_reason = models.CharField(max_length=32, null=True, blank=True)
+    onboarding_delegated_to_invite = models.ForeignKey(
+        "posthog.OrganizationInvite",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="delegating_users",
+    )
+    onboarding_delegation_accepted_at = models.DateTimeField(null=True, blank=True)
+
     # DEPRECATED
     events_column_config = models.JSONField(default=events_column_config_default)
     # DEPRECATED - Most emails are done via 3rd parties and we use their opt/in out tooling

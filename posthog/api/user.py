@@ -27,7 +27,7 @@ from django_otp import login as otp_login
 from django_otp.plugins.otp_static.models import StaticDevice, StaticToken
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from django_otp.util import random_hex
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, inline_serializer
 from loginas.utils import is_impersonated_session
 from prometheus_client import Counter
 from rest_framework import exceptions, mixins, serializers, viewsets
@@ -163,6 +163,10 @@ class UserSerializer(serializers.ModelSerializer):
             "shortcut_position",
             "role_at_organization",
             "passkeys_enabled_for_2fa",
+            "onboarding_skipped_at",
+            "onboarding_skipped_reason",
+            "onboarding_delegated_to_invite",
+            "onboarding_delegation_accepted_at",
         ]
 
         read_only_fields = [
@@ -182,6 +186,10 @@ class UserSerializer(serializers.ModelSerializer):
             "organizations",
             "has_social_auth",
             "has_sso_enforcement",
+            "onboarding_skipped_at",
+            "onboarding_skipped_reason",
+            "onboarding_delegated_to_invite",
+            "onboarding_delegation_accepted_at",
         ]
 
         extra_kwargs = {
@@ -638,6 +646,49 @@ class UserViewSet(
 
         instance.pending_email = None
         instance.save()
+
+        return Response(self.get_serializer(instance=instance).data)
+
+    @extend_schema(
+        request=inline_serializer(
+            name="OnboardingSkipRequest",
+            fields={
+                "reason": serializers.ChoiceField(choices=["delegated", "later", "other"], required=True),
+                "step_at_skip": serializers.CharField(required=False, allow_blank=True),
+            },
+        ),
+    )
+    @action(methods=["POST"], detail=True, url_path="onboarding/skip")
+    def onboarding_skip(self, request, **kwargs):
+        """
+        Mark the current user as having exited onboarding. Idempotent — re-calling updates the same row.
+        `reason=delegated` is reserved for the delegation flow (use /organizations/{id}/invites/delegate/ to create
+        the invite first); callers may pass it here to set the skip timestamp without creating a duplicate invite.
+        """
+        instance = self.get_object()
+        if instance != request.user:
+            raise exceptions.PermissionDenied("You can only skip onboarding for yourself.")
+
+        reason = (request.data or {}).get("reason")
+        if reason not in ("delegated", "later", "other"):
+            raise serializers.ValidationError(
+                {"reason": "Must be one of 'delegated', 'later', or 'other'."}, code="invalid_input"
+            )
+
+        step_at_skip = (request.data or {}).get("step_at_skip") or ""
+
+        instance.onboarding_skipped_at = datetime.now(UTC)
+        instance.onboarding_skipped_reason = reason
+        instance.save(update_fields=["onboarding_skipped_at", "onboarding_skipped_reason"])
+
+        if instance.distinct_id and reason != "delegated":
+            import posthoganalytics
+
+            posthoganalytics.capture(
+                distinct_id=str(instance.distinct_id),
+                event="onboarding skipped later" if reason == "later" else "onboarding skipped",
+                properties={"step_at_skip": step_at_skip or None, "reason": reason},
+            )
 
         return Response(self.get_serializer(instance=instance).data)
 

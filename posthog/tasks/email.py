@@ -218,11 +218,18 @@ def send_invite(invite_id: str) -> None:
     invite: OrganizationInvite = OrganizationInvite.objects.select_related("created_by", "organization").get(
         id=invite_id
     )
+    is_delegation = bool(invite.is_setup_delegation)
+    template_name = "delegation_invite" if is_delegation else "invite"
+    if is_delegation:
+        subject = f"{invite.created_by.first_name} wants you to set up PostHog for {invite.organization.name}"
+    else:
+        subject = f"{invite.created_by.first_name} invited you to join {invite.organization.name} on PostHog"
+
     message = EmailMessage(
         use_http=True,
         campaign_key=campaign_key,
-        subject=f"{invite.created_by.first_name} invited you to join {invite.organization.name} on PostHog",
-        template_name="invite",
+        subject=subject,
+        template_name=template_name,
         template_context={
             "invite": invite,
             "expiry_date": (timezone.now() + datetime.timedelta(days=INVITE_DAYS_VALIDITY)).strftime(

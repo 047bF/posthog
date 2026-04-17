@@ -78,6 +78,13 @@ class OrganizationInvite(ModelActivityMixin, UUIDTModel):
         help_text="List of team IDs and corresponding access levels to private projects.",
         validators=[validate_private_project_access],
     )
+    is_setup_delegation = models.BooleanField(
+        default=False,
+        help_text=(
+            "True when this invite was created via the onboarding delegation flow. "
+            "Downstream logic routes the delegate through full onboarding on accept."
+        ),
+    )
 
     def validate(
         self,
@@ -127,6 +134,9 @@ class OrganizationInvite(ModelActivityMixin, UUIDTModel):
             self.validate(user=user)
         user.join(organization=self.organization, level=self.level)
 
+        if self.is_setup_delegation:
+            self._mark_delegators_accepted(user)
+
         for item in self.private_project_access or []:
             try:
                 team: Team = self.organization.teams.get(id=item["id"])
@@ -160,6 +170,15 @@ class OrganizationInvite(ModelActivityMixin, UUIDTModel):
         OrganizationInvite.objects.filter(
             organization=self.organization, target_email__iexact=self.target_email
         ).delete()
+
+    def _mark_delegators_accepted(self, accepting_user: "User") -> None:
+        from posthog.models.user import User
+
+        delegators = User.objects.filter(onboarding_delegated_to_invite_id=self.id)
+        delegators.update(onboarding_delegation_accepted_at=timezone.now())
+        # Also mark the accepting user so the frontend knows they should be routed to full onboarding
+        accepting_user.onboarding_delegation_accepted_at = timezone.now()
+        accepting_user.save(update_fields=["onboarding_delegation_accepted_at"])
 
     def _sync_user_product_list_for_accessible_teams(self, user: "User") -> None:
         """Sync UserProductList for all teams the user has access to."""
