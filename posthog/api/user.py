@@ -207,7 +207,13 @@ class UserSerializer(serializers.ModelSerializer):
         invite_id = instance.onboarding_delegated_to_invite_id
         if not invite_id:
             return None
-        org_id = OrganizationInvite.objects.filter(pk=invite_id).values_list("organization_id", flat=True).first()
+        # invite_id is an internal FK stored on the user by the delegate endpoint
+        # (not user-supplied input); this read just returns the org of that invite.
+        org_id = (
+            OrganizationInvite.objects.filter(pk=invite_id)  # nosemgrep: idor-lookup-without-org
+            .values_list("organization_id", flat=True)
+            .first()
+        )
         return str(org_id) if org_id else None
 
     def get_has_password(self, instance: User) -> bool:
