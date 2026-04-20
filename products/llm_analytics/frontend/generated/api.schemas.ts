@@ -65,9 +65,9 @@ export const OutputTypeEnumApi = {
  * `fireworks` - Fireworks
  * `together_ai` - Together AI
  */
-export type Provider519EnumApi = (typeof Provider519EnumApi)[keyof typeof Provider519EnumApi]
+export type Provider1c3EnumApi = (typeof Provider1c3EnumApi)[keyof typeof Provider1c3EnumApi]
 
-export const Provider519EnumApi = {
+export const Provider1c3EnumApi = {
     Openai: 'openai',
     Anthropic: 'anthropic',
     Gemini: 'gemini',
@@ -80,7 +80,7 @@ export const Provider519EnumApi = {
  * Nested serializer for model configuration.
  */
 export interface ModelConfigurationApi {
-    provider: Provider519EnumApi
+    provider: Provider1c3EnumApi
     /** @maxLength 100 */
     model: string
     /** @nullable */
@@ -575,7 +575,7 @@ export const LLMProviderKeyStateEnumApi = {
 
 export interface LLMProviderKeyApi {
     readonly id: string
-    provider: Provider519EnumApi
+    provider: Provider1c3EnumApi
     /** @maxLength 255 */
     name: string
     readonly state: LLMProviderKeyStateEnumApi
@@ -601,7 +601,7 @@ export interface PaginatedLLMProviderKeyListApi {
 
 export interface PatchedLLMProviderKeyApi {
     readonly id?: string
-    provider?: Provider519EnumApi
+    provider?: Provider1c3EnumApi
     /** @maxLength 255 */
     name?: string
     readonly state?: LLMProviderKeyStateEnumApi

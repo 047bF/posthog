@@ -14890,10 +14890,10 @@ export namespace Schemas {
     * `fireworks` - Fireworks
     * `together_ai` - Together AI
      */
-    export type Provider519Enum = typeof Provider519Enum[keyof typeof Provider519Enum];
+    export type Provider1c3Enum = typeof Provider1c3Enum[keyof typeof Provider1c3Enum];
 
 
-    export const Provider519Enum = {
+    export const Provider1c3Enum = {
       Openai: 'openai',
       Anthropic: 'anthropic',
       Gemini: 'gemini',
@@ -14906,7 +14906,7 @@ export namespace Schemas {
      * Nested serializer for model configuration.
      */
     export interface ModelConfiguration {
-      provider: Provider519Enum;
+      provider: Provider1c3Enum;
       /** @maxLength 100 */
       model: string;
       /** @nullable */
@@ -19602,7 +19602,7 @@ export namespace Schemas {
 
     export interface LLMProviderKey {
       readonly id: string;
-      provider: Provider519Enum;
+      provider: Provider1c3Enum;
       /** @maxLength 255 */
       name: string;
       readonly state: LLMProviderKeyStateEnum;
@@ -25866,7 +25866,7 @@ export namespace Schemas {
 
     export interface PatchedLLMProviderKey {
       readonly id?: string;
-      provider?: Provider519Enum;
+      provider?: Provider1c3Enum;
       /** @maxLength 255 */
       name?: string;
       readonly state?: LLMProviderKeyStateEnum;
