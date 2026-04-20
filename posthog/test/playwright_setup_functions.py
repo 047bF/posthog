@@ -177,6 +177,8 @@ def create_organization_with_team(
         user = User.objects.get(email=user_email)
         organization = user.organization
         team = user.team
+        assert organization is not None, "Demo data setup must create an organization for the user"
+        assert team is not None, "Demo data setup must create a team for the user"
 
         if org_name != "Hedgebox Inc.":
             organization.name = org_name

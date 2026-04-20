@@ -80,7 +80,7 @@ async def execute_task_processing_workflow_async(
             )
             tasks_enabled = posthoganalytics.feature_enabled(
                 "tasks",
-                user.distinct_id,
+                user.distinct_id or str(user.pk),
                 groups={"organization": str(team.organization_id)},
                 group_properties={"organization": {"id": str(team.organization_id)}},
                 only_evaluate_locally=False,
@@ -179,7 +179,7 @@ def execute_task_processing_workflow(
 
             tasks_enabled = posthoganalytics.feature_enabled(
                 "tasks",
-                user.distinct_id,
+                user.distinct_id or str(user.pk),
                 groups={"organization": str(team.organization.id)},
                 group_properties={"organization": {"id": str(team.organization.id)}},
                 only_evaluate_locally=False,

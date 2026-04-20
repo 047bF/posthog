@@ -58,10 +58,11 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(f"User with ID {user_id} not found"))
                 return
         else:
-            user = User.objects.first()
-            if not user:
+            first_user = User.objects.first()
+            if not first_user:
                 self.stdout.write(self.style.ERROR("No users found in database"))
                 return
+            user = first_user
 
         self.stdout.write(f"Using user: {user.email} (ID: {user.id})")
         self.stdout.write(f"Session ID: {session_id}")

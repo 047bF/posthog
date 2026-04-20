@@ -1,5 +1,5 @@
 import logging
-from typing import Union
+from typing import Any, Union
 
 from django.db import transaction
 from django.db.models import QuerySet
@@ -136,7 +136,13 @@ class PostHogSCIMGroup(SCIMGroup):
         to_remove = current_user_ids - member_user_ids
 
         for raw_member_id in to_add:
-            user_pk = int(raw_member_id)
+            if raw_member_id is None:
+                continue
+            try:
+                user_pk = int(raw_member_id)
+            except (TypeError, ValueError):
+                logger.warning("scim_group_skip_invalid_member_id", extra={"member_value": raw_member_id})
+                continue
             try:
                 user = User.objects.get(id=user_pk)
                 org_membership = OrganizationMembership.objects.filter(
@@ -214,6 +220,7 @@ class PostHogSCIMGroup(SCIMGroup):
                 self.obj.save()
 
             elif attr_name == "members":
+                members_to_add: list[Any] = []
                 if path.is_complex:
                     # Handle filtered path: members[value eq "<user-id>"]
                     user_id = path.params_by_attr_paths.get(("members", "value", None))
@@ -227,10 +234,17 @@ class PostHogSCIMGroup(SCIMGroup):
                     members_to_add = [{"value": value}]
 
                 for member_data in members_to_add:
-                    user_id = member_data.get("value")
+                    raw_uid = member_data.get("value")
+                    if raw_uid is None:
+                        continue
+                    try:
+                        user_pk = int(raw_uid)
+                    except (TypeError, ValueError):
+                        logger.warning("scim_group_skip_invalid_member_id", extra={"member_value": raw_uid})
+                        continue
 
                     try:
-                        user = User.objects.get(id=user_id)
+                        user = User.objects.get(id=user_pk)
                         org_membership = OrganizationMembership.objects.filter(
                             user=user, organization=self._organization_domain.organization
                         ).first()
@@ -243,10 +257,6 @@ class PostHogSCIMGroup(SCIMGroup):
                             role=self.obj, user=user, defaults={"organization_member": org_membership}
                         )
                     except User.DoesNotExist:
-                        continue
-                    except ValueError:
-                        # Skip non-user members (e.g., nested group references from IdPs)
-                        logger.warning("scim_group_skip_invalid_member_id", extra={"member_value": user_id})
                         continue
 
     def handle_remove(self, path: AttrPath, value: Union[str, list, dict], operation: dict) -> None:

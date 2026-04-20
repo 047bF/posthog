@@ -829,8 +829,11 @@ class EmailMFAViewSet(NonCreatingViewSetMixin, viewsets.GenericViewSet):
                 {"detail": "No pending email MFA verification found."}, code="no_pending_verification"
             )
 
+        pending_user_id = email_mfa_verifier.get_pending_email_mfa_verification_user_id(request)
+        if pending_user_id is None:
+            raise serializers.ValidationError({"detail": "User not found."}, code="user_not_found")
         try:
-            user = User.objects.get(pk=email_mfa_verifier.get_pending_email_mfa_verification_user_id(request))
+            user = User.objects.get(pk=pending_user_id)
         except User.DoesNotExist:
             raise serializers.ValidationError({"detail": "User not found."}, code="user_not_found")
 
@@ -899,12 +902,13 @@ class PasswordResetCompleteSerializer(serializers.Serializer):
         if settings.E2E_TESTING and validated_data["token"] == "e2e_test_token":
             return {"email": "test@posthog.com"}
 
+        user_uuid_kw = self.context["view"].kwargs["user_uuid"]
         try:
-            user = User.objects.filter(is_active=True).get(uuid=self.context["view"].kwargs["user_uuid"])
+            user = User.objects.filter(is_active=True).get(uuid=str(user_uuid_kw))
         except (User.DoesNotExist, ValidationError):
             capture_exception(
                 Exception("User not found in password reset serializer"),
-                {"user_uuid": self.context["view"].kwargs["user_uuid"]},
+                {"user_uuid": user_uuid_kw},
             )
             raise serializers.ValidationError(
                 {"token": ["This reset token is invalid or has expired."]},
@@ -959,8 +963,14 @@ class PasswordResetCompleteViewSet(NonCreatingViewSetMixin, mixins.RetrieveModel
         if settings.E2E_TESTING and user_uuid == "e2e_test_user" and token == "e2e_test_token":
             return {"success": True, "token": token}
 
+        if not user_uuid:
+            raise serializers.ValidationError(
+                {"token": ["This reset token is invalid or has expired."]},
+                code="invalid_token",
+            )
+
         try:
-            user = User.objects.filter(is_active=True).get(uuid=user_uuid)
+            user = User.objects.filter(is_active=True).get(uuid=str(user_uuid))
         except (User.DoesNotExist, ValidationError):
             capture_exception(
                 Exception("User not found in password reset viewset"), {"user_uuid": user_uuid, "token": token}

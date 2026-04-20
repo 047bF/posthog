@@ -325,13 +325,13 @@ def get_instance_metadata(period: tuple[datetime, datetime]) -> InstanceMetadata
 
         metadata.users_who_logged_in = [
             (
-                {"id": user.id, "distinct_id": user.distinct_id}
+                {"id": user.id, "distinct_id": user.distinct_id or ""}
                 if user.anonymize_data
                 else {
                     "id": user.id,
-                    "distinct_id": user.distinct_id,
-                    "first_name": user.first_name,
-                    "email": user.email,
+                    "distinct_id": user.distinct_id or "",
+                    "first_name": user.first_name or "",
+                    "email": user.email or "",
                 }
             )
             for user in User.objects.filter(is_active=True, last_login__gte=period_start, last_login__lte=period_end)
@@ -340,13 +340,13 @@ def get_instance_metadata(period: tuple[datetime, datetime]) -> InstanceMetadata
 
         metadata.users_who_signed_up = [
             (
-                {"id": user.id, "distinct_id": user.distinct_id}
+                {"id": user.id, "distinct_id": user.distinct_id or ""}
                 if user.anonymize_data
                 else {
                     "id": user.id,
-                    "distinct_id": user.distinct_id,
-                    "first_name": user.first_name,
-                    "email": user.email,
+                    "distinct_id": user.distinct_id or "",
+                    "first_name": user.first_name or "",
+                    "email": user.email or "",
                 }
             )
             for user in User.objects.filter(

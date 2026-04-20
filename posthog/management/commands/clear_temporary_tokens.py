@@ -1,4 +1,5 @@
 from django.core.management.base import BaseCommand
+from django.db import connection
 
 from posthog.models import User
 
@@ -14,17 +15,27 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         batch_size = options["batch_size"]
         total_updated = 0
+        user_table = connection.ops.quote_name(User._meta.db_table)
 
+        # `temporary_token` is a deprecated field (django-deprecate-fields) and is not exposed on the ORM.
         while True:
-            ids = list(
-                User.objects.filter(temporary_token__isnull=False)
-                .exclude(temporary_token="")
-                .values_list("id", flat=True)[:batch_size]
-            )
-            if not ids:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    UPDATE {user_table} AS u
+                    SET temporary_token = NULL
+                    FROM (
+                        SELECT id FROM {user_table}
+                        WHERE temporary_token IS NOT NULL AND temporary_token <> ''
+                        LIMIT %s
+                    ) AS batch
+                    WHERE u.id = batch.id
+                    """,
+                    [batch_size],
+                )
+                updated = cursor.rowcount
+            if not updated:
                 break
-
-            updated = User.objects.filter(id__in=ids).update(temporary_token=None)
             total_updated += updated
             self.stdout.write(f"  Cleared {updated} rows (total so far: {total_updated})")
 
