@@ -528,3 +528,11 @@ expose = [
 from = [
     "products.tracing",
 ]
+
+[[interfaces]]
+expose = [
+    "backend\\.presentation\\.webhooks.*",
+]
+from = [
+    "products.ci_monitoring",
+]

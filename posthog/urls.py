@@ -32,8 +32,6 @@ from posthog.api import (
     uploaded_media,
     user,
 )
-from posthog.api.oauth.connected_apps import ConnectedAppsViewSet
-from posthog.api.oauth.wizard_metadata import WIZARD_METADATA_PATH, WizardClientMetadataView
 from posthog.api.query import progress
 from posthog.api.sdk_doctor import sdk_doctor
 from posthog.api.slack import slack_interactivity_callback
@@ -48,12 +46,11 @@ from posthog.models.instance_setting import get_instance_setting
 from posthog.oauth2_urls import urlpatterns as oauth2_urls
 from posthog.temporal.codec_server import decode_payloads
 
+from products.ci_monitoring.backend.presentation.webhooks import github_workflow_run_webhook
 from products.data_warehouse.backend.api.public_source_configs import PublicSourceConfigViewSet
 from products.early_access_features.backend.api import early_access_features
-from products.messaging.backend.api.customerio_webhook import CustomerIOWebhookView
 from products.product_tours.backend.api import product_tours
 from products.signals.backend import views as signals_views
-from products.signals.backend.views import SignalUserAutonomyConfigView as signals_user_autonomy_view
 from products.slack_app.backend.api import (
     posthog_code_event_handler,
     posthog_code_interactivity_handler,
@@ -203,18 +200,8 @@ urlpatterns = [
     path("api/environments/<int:team_id>/query/<str:query_uuid>/progress", progress),
     path("api/unsubscribe", unsubscribe.unsubscribe),
     path("api/alerts/github", github.SecretAlert.as_view()),
-    path(
-        "api/users/<str:user_id>/signal_autonomy/",
-        signals_user_autonomy_view.as_view(),
-        name="user_signal_autonomy",
-    ),
-    path("api/environments/<int:team_id>/messaging/customerio/webhook/", csrf_exempt(CustomerIOWebhookView.as_view())),
     path("api/sdk_doctor/", sdk_doctor),
     path("api/conversations/", include("products.conversations.backend.api.urls")),
-    path(
-        "api/environments/<int:parent_lookup_team_id>/mcp_analytics/",
-        include("products.mcp_analytics.backend.presentation.urls"),
-    ),
     opt_slash_path("api/support/ensure-zendesk-organization", csrf_exempt(ensure_zendesk_organization)),
     path("api/", include(router.urls)),
     # Override the tf_urls QRGeneratorView to use the cache-aware version (handles session race conditions)
@@ -228,6 +215,7 @@ urlpatterns = [
     path("toolbar_oauth/check", user.toolbar_oauth_check),
     opt_slash_path("api/user/redirect_to_site", user.redirect_to_site),
     opt_slash_path("api/user/redirect_to_website", user.redirect_to_website),
+    opt_slash_path("api/user/test_slack_webhook", user.test_slack_webhook),
     opt_slash_path("api/early_access_features", early_access_features),
     opt_slash_path("api/web_experiments", web_experiments),
     opt_slash_path("api/surveys", surveys),
@@ -276,19 +264,6 @@ urlpatterns = [
     ),
     # Test setup endpoint (only available in TEST mode)
     path("api/setup_test/<str:test_name>/", csrf_exempt(playwright_setup.setup_test)),
-    opt_slash_path(
-        "api/oauth/connected-apps",
-        ConnectedAppsViewSet.as_view({"get": "list"}),
-    ),
-    path(
-        "api/oauth/connected-apps/<uuid:pk>/revoke/",
-        ConnectedAppsViewSet.as_view({"post": "revoke"}),
-    ),
-    path(
-        WIZARD_METADATA_PATH,
-        WizardClientMetadataView.as_view(),
-        name="wizard-client-metadata",
-    ),
     re_path(r"^api.+", api_not_found),
     path("authorize_and_redirect/", login_required(authorize_and_redirect)),
     path(
@@ -333,6 +308,8 @@ urlpatterns = [
     opt_slash_path("slack/posthog-code-interactivity-callback", posthog_code_interactivity_handler),
     # GitHub webhooks for task lifecycle events
     opt_slash_path("webhooks/github/pr", github_pr_webhook),
+    # GitHub webhooks for CI monitoring
+    opt_slash_path("webhooks/github/ci", github_workflow_run_webhook),
     # Message preferences
     path("messaging-preferences/<str:token>/", preferences_page, name="message_preferences"),
     opt_slash_path("messaging-preferences/update", update_preferences, name="message_preferences_update"),
