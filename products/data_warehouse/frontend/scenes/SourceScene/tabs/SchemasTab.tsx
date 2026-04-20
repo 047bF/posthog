@@ -27,7 +27,6 @@ import { TZLabel } from 'lib/components/TZLabel'
 import { FEATURE_FLAGS } from 'lib/constants'
 import { dayjs } from 'lib/dayjs'
 import { More } from 'lib/lemon-ui/LemonButton/More'
-import { featureFlagLogic } from 'lib/logic/featureFlagLogic'
 import { groupBy, pluralize } from 'lib/utils'
 import { newInternalTab } from 'lib/utils/newInternalTab'
 import { teamLogic } from 'scenes/teamLogic'
@@ -158,9 +157,7 @@ export const SchemasTab = ({ id }: SchemasTabProps): JSX.Element => {
     } = useActions(logic)
     const { addProductIntentForCrossSell } = useActions(teamLogic)
 
-    const { featureFlags } = useValues(featureFlagLogic)
-    const isDirectQuerySource =
-        !!featureFlags[FEATURE_FLAGS.DWH_POSTGRES_DIRECT_QUERY] && source?.access_method === 'direct'
+    const isDirectQuerySource = source?.access_method === 'direct'
     const directQueryDefaultSchema = typeof source?.job_inputs?.schema === 'string' ? source.job_inputs.schema : null
     const groupedDirectQuerySchemas = groupDirectQuerySourceSchemasBySchema(filteredSchemas, directQueryDefaultSchema)
 
