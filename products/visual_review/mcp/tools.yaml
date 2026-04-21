@@ -11,6 +11,7 @@ tools:
     visual-review-repos-list:
         operation: visual_review_repos_list
         enabled: true
+        feature_flag: visual-review-mcp-tools
         scopes:
             - visual_review:read
         annotations:
@@ -29,6 +30,7 @@ tools:
     visual-review-repos-retrieve:
         operation: visual_review_repos_retrieve
         enabled: true
+        feature_flag: visual-review-mcp-tools
         scopes:
             - visual_review:read
         annotations:
@@ -45,6 +47,7 @@ tools:
     visual-review-runs-list:
         operation: visual_review_runs_list
         enabled: true
+        feature_flag: visual-review-mcp-tools
         scopes:
             - visual_review:read
         annotations:
@@ -66,6 +69,7 @@ tools:
     visual-review-runs-retrieve:
         operation: visual_review_runs_retrieve
         enabled: true
+        feature_flag: visual-review-mcp-tools
         scopes:
             - visual_review:read
         annotations:
@@ -90,6 +94,7 @@ tools:
     visual-review-runs-counts-retrieve:
         operation: visual_review_runs_counts_retrieve
         enabled: true
+        feature_flag: visual-review-mcp-tools
         scopes:
             - visual_review:read
         annotations:
@@ -103,6 +108,7 @@ tools:
     visual-review-runs-snapshot-history-list:
         operation: visual_review_runs_snapshot_history_list
         enabled: true
+        feature_flag: visual-review-mcp-tools
         scopes:
             - visual_review:read
         annotations:
@@ -117,6 +123,7 @@ tools:
     visual-review-runs-snapshots-list:
         operation: visual_review_runs_snapshots_list
         enabled: true
+        feature_flag: visual-review-mcp-tools
         scopes:
             - visual_review:read
         annotations:
@@ -136,6 +143,7 @@ tools:
     visual-review-runs-tolerated-hashes-list:
         operation: visual_review_runs_tolerated_hashes_list
         enabled: true
+        feature_flag: visual-review-mcp-tools
         scopes:
             - visual_review:read
         annotations:
