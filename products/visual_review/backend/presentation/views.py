@@ -131,7 +131,7 @@ class RunViewSet(TeamAndOrgViewSetMixin, viewsets.GenericViewSet):
 
     scope_object = "visual_review"
     scope_object_write_actions = ["create", "complete", "approve", "auto_approve", "add_snapshots"]
-    scope_object_read_actions = ["list", "retrieve", "snapshots", "counts"]
+    scope_object_read_actions = ["list", "retrieve", "snapshots", "counts", "snapshot_history", "tolerated_hashes"]
 
     @extend_schema(
         parameters=[
@@ -274,6 +274,9 @@ class RunViewSet(TeamAndOrgViewSetMixin, viewsets.GenericViewSet):
             return Response({"detail": "Run not found"}, status=status.HTTP_404_NOT_FOUND)
 
         history = api.get_snapshot_history(run.repo_id, identifier)
+        page = self.paginate_queryset(history)
+        if page is not None:
+            return self.get_paginated_response(SnapshotHistoryEntrySerializer(instance=page, many=True).data)
         return Response(SnapshotHistoryEntrySerializer(instance=history, many=True).data)
 
     @extend_schema(responses={200: RunSerializer})
