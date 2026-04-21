@@ -29,7 +29,7 @@ def compute_pr_fingerprint(pr: dict[str, Any]) -> str:
     """Compute a fingerprint for a PR based on its URL and updated_at timestamp."""
     import hashlib
 
-    pr_url = pr.get("html_url", "")
+    pr_url = pr.get("url", "")
     updated_at = pr.get("updated_at", "")
     fingerprint_source = f"{pr_url}|{updated_at}"
     return hashlib.sha256(fingerprint_source.encode()).hexdigest()
