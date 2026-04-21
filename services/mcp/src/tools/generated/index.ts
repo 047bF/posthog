@@ -31,6 +31,7 @@ import { GENERATED_TOOLS as queryWrappers } from './query-wrappers'
 import { GENERATED_TOOLS as replay } from './replay'
 import { GENERATED_TOOLS as skills } from './skills'
 import { GENERATED_TOOLS as surveys } from './surveys'
+import { GENERATED_TOOLS as visual_review } from './visual_review'
 import { GENERATED_TOOLS as workflows } from './workflows'
 
 export const GENERATED_TOOL_MAP: Record<string, () => ToolBase<ZodObjectAny>> = {
@@ -64,5 +65,6 @@ export const GENERATED_TOOL_MAP: Record<string, () => ToolBase<ZodObjectAny>> = 
     ...replay,
     ...skills,
     ...surveys,
+    ...visual_review,
     ...workflows,
 }
