@@ -339,7 +339,7 @@ class ProcessTaskWorkflow(PostHogWorkflow):
                         )
                         self._pr_event_time = None
                         self._ci_repetitions += 1
-                        if self._should_run_ci_follow_up():
+                        if await self._should_run_ci_follow_up():
                             ci_message = self.context.ci_prompt or DEFAULT_CI_MESSAGE
                             self._last_active_time = workflow.now()  # Reset inactivity timer on CI follow-up\
                             await self._send_followup_to_sandbox(ci_message)
