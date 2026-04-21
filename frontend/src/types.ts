@@ -355,6 +355,16 @@ export interface UserType extends UserBaseType {
     onboarding_delegated_to_invite?: string | null
     onboarding_delegated_to_organization_id?: string | null
     onboarding_delegation_accepted_at?: string | null
+    is_organization_first_user?: boolean
+    pending_invites?: PendingInviteForCurrentUser[]
+}
+
+export interface PendingInviteForCurrentUser {
+    id: string
+    target_email: string
+    organization_id: string
+    organization_name: string
+    created_at: string
 }
 
 export type HedgehogColorOptions =
@@ -5249,6 +5259,7 @@ export type APIScopeObject =
     | 'llm_gateway'
     | 'llm_prompt'
     | 'llm_provider_key'
+    | 'llm_skill'
     | 'logs'
     | 'notebook'
     | 'organization'
@@ -6218,6 +6229,7 @@ export enum SDKKey {
     OPENAI = 'openai',
     OPENAI_AGENTS = 'openai_agents',
     OPENROUTER = 'openrouter',
+    OPENTELEMETRY = 'opentelemetry',
     PERPLEXITY = 'perplexity',
     PHP = 'php',
     PORTKEY = 'portkey',
@@ -6285,22 +6297,15 @@ export enum AppMetricsTab {
     History = 'history',
 }
 
-/*
-    WARNING: Everything below 'Notebooks' is to be removed in future releases
-*/
 export enum SidePanelTab {
     Max = 'max',
     Notebooks = 'notebook',
     Support = 'support',
-    Docs = 'docs',
-    Changelog = 'changelog',
     Settings = 'settings',
     Activity = 'activity',
     Discussion = 'discussion',
-    Status = 'status',
     Exports = 'exports',
     AccessControl = 'access-control',
-    Health = 'health',
     Info = 'info',
 }
 
@@ -6380,6 +6385,7 @@ export type CyclotronJobInputSchemaType = {
         | 'native_email'
         | 'posthog_assignee'
         | 'posthog_ticket_tags'
+        | 'posthog_business_hours'
     key: string
     label: string
     choices?: { value: string; label: string }[]
@@ -6836,6 +6842,13 @@ export interface FileSystemType {
     iconType?: FileSystemIconType
     // Color of the icon
     iconColor?: FileSystemIconColor
+}
+
+export interface FeaturePreviewGateConfig {
+    flag: string
+    title: string
+    description: string
+    docsURL?: string
 }
 
 export interface ProductManifest {

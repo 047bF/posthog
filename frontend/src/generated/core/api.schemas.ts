@@ -1069,9 +1069,9 @@ export interface PatchedProjectSecretAPIKeyApi {
  * `Boolean` - Boolean
  * `Duration` - Duration
  */
-export type PropertyType549EnumApi = (typeof PropertyType549EnumApi)[keyof typeof PropertyType549EnumApi]
+export type PropertyType02dEnumApi = (typeof PropertyType02dEnumApi)[keyof typeof PropertyType02dEnumApi]
 
-export const PropertyType549EnumApi = {
+export const PropertyType02dEnumApi = {
     DateTime: 'DateTime',
     String: 'String',
     Numeric: 'Numeric',
@@ -1093,7 +1093,7 @@ export interface EnterprisePropertyDefinitionApi {
     readonly updated_by: UserBasicApi
     /** @nullable */
     readonly is_seen_on_filtered_events: boolean | null
-    property_type?: PropertyType549EnumApi | BlankEnumApi | NullEnumApi | null
+    property_type?: PropertyType02dEnumApi | BlankEnumApi | NullEnumApi | null
     verified?: boolean
     /** @nullable */
     readonly verified_at: string | null
@@ -1125,7 +1125,7 @@ export interface PatchedEnterprisePropertyDefinitionApi {
     readonly updated_by?: UserBasicApi
     /** @nullable */
     readonly is_seen_on_filtered_events?: boolean | null
-    property_type?: PropertyType549EnumApi | BlankEnumApi | NullEnumApi | null
+    property_type?: PropertyType02dEnumApi | BlankEnumApi | NullEnumApi | null
     verified?: boolean
     /** @nullable */
     readonly verified_at?: string | null
@@ -1197,9 +1197,10 @@ export const TargetTypeEnumApi = {
  * `monthly` - Monthly
  * `yearly` - Yearly
  */
-export type FrequencyEnumApi = (typeof FrequencyEnumApi)[keyof typeof FrequencyEnumApi]
+export type SubscriptionFrequencyEnumApi =
+    (typeof SubscriptionFrequencyEnumApi)[keyof typeof SubscriptionFrequencyEnumApi]
 
-export const FrequencyEnumApi = {
+export const SubscriptionFrequencyEnumApi = {
     Daily: 'daily',
     Weekly: 'weekly',
     Monthly: 'monthly',
@@ -1262,7 +1263,7 @@ export interface SubscriptionApi {
 * `weekly` - Weekly
 * `monthly` - Monthly
 * `yearly` - Yearly */
-    frequency: FrequencyEnumApi
+    frequency: SubscriptionFrequencyEnumApi
     /**
      * Interval multiplier (e.g. 2 with weekly frequency means every 2 weeks). Default 1.
      * @minimum -2147483648
@@ -1368,7 +1369,7 @@ export interface PatchedSubscriptionApi {
 * `weekly` - Weekly
 * `monthly` - Monthly
 * `yearly` - Yearly */
-    frequency?: FrequencyEnumApi
+    frequency?: SubscriptionFrequencyEnumApi
     /**
      * Interval multiplier (e.g. 2 with weekly frequency means every 2 weeks). Default 1.
      * @minimum -2147483648
@@ -1632,6 +1633,17 @@ export const ShortcutPositionEnumApi = {
     Hidden: 'hidden',
 } as const
 
+/**
+ * Shape of each item in UserSerializer.pending_invites.
+ */
+export interface PendingInviteApi {
+    id: string
+    target_email: string
+    organization_id: string
+    organization_name: string
+    created_at: string
+}
+
 export type UserApiNotificationSettings = { [key: string]: unknown }
 
 export interface UserApi {
@@ -1705,6 +1717,9 @@ export interface UserApi {
     readonly onboarding_delegated_to_organization_id: string | null
     /** @nullable */
     readonly onboarding_delegation_accepted_at: string | null
+    /** @nullable */
+    readonly is_organization_first_user: boolean | null
+    readonly pending_invites: readonly PendingInviteApi[]
 }
 
 export interface PaginatedUserListApi {
@@ -1789,6 +1804,9 @@ export interface PatchedUserApi {
     readonly onboarding_delegated_to_organization_id?: string | null
     /** @nullable */
     readonly onboarding_delegation_accepted_at?: string | null
+    /** @nullable */
+    readonly is_organization_first_user?: boolean | null
+    readonly pending_invites?: readonly PendingInviteApi[]
 }
 
 /**

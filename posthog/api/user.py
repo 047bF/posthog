@@ -27,7 +27,7 @@ from django_otp import login as otp_login
 from django_otp.plugins.otp_static.models import StaticDevice, StaticToken
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from django_otp.util import random_hex
-from drf_spectacular.utils import extend_schema, inline_serializer
+from drf_spectacular.utils import extend_schema, extend_schema_field, inline_serializer
 from loginas.utils import is_impersonated_session
 from prometheus_client import Counter
 from rest_framework import exceptions, mixins, serializers, viewsets
@@ -103,6 +103,16 @@ class ScenePersonalisationBasicSerializer(serializers.ModelSerializer):
         fields = ["scene", "dashboard"]
 
 
+class PendingInviteSerializer(serializers.Serializer):
+    """Shape of each item in UserSerializer.pending_invites."""
+
+    id = serializers.CharField()
+    target_email = serializers.EmailField()
+    organization_id = serializers.CharField()
+    organization_name = serializers.CharField()
+    created_at = serializers.DateTimeField()
+
+
 class UserSerializer(serializers.ModelSerializer):
     has_password = serializers.SerializerMethodField()
     is_impersonated = serializers.SerializerMethodField()
@@ -112,6 +122,7 @@ class UserSerializer(serializers.ModelSerializer):
     is_2fa_enabled = serializers.SerializerMethodField()
     has_social_auth = serializers.SerializerMethodField()
     has_sso_enforcement = serializers.SerializerMethodField()
+    pending_invites = serializers.SerializerMethodField()
     team = TeamBasicSerializer(read_only=True)
     organization = OrganizationSerializer(read_only=True)
     organizations = OrganizationBasicSerializer(many=True, read_only=True)
@@ -126,6 +137,7 @@ class UserSerializer(serializers.ModelSerializer):
         help_text="Organization ID of the pending delegation invite, if any. Used by the frontend "
         "to scope the 'waiting for teammate' UI to the org where delegation was initiated."
     )
+    is_organization_first_user = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -173,6 +185,8 @@ class UserSerializer(serializers.ModelSerializer):
             "onboarding_delegated_to_invite",
             "onboarding_delegated_to_organization_id",
             "onboarding_delegation_accepted_at",
+            "is_organization_first_user",
+            "pending_invites",
         ]
 
         read_only_fields = [
@@ -197,6 +211,8 @@ class UserSerializer(serializers.ModelSerializer):
             "onboarding_delegated_to_invite",
             "onboarding_delegated_to_organization_id",
             "onboarding_delegation_accepted_at",
+            "is_organization_first_user",
+            "pending_invites",
         ]
 
         extra_kwargs = {
@@ -272,6 +288,75 @@ class UserSerializer(serializers.ModelSerializer):
         return bool(
             OrganizationDomain.objects.get_sso_enforcement_for_email_address(instance.email, organization=organization)
         )
+
+    def get_is_organization_first_user(self, instance: User) -> bool | None:
+        # Only compute when the serialized user is the requesting user. Avoids paying an
+        # extra membership query on every /api/users/@me/ hit for admin/staff flows that
+        # don't need this field, and ensures invitee attribution can't leak across users.
+        request = self.context.get("request")
+        if not request or request.user.id != instance.id:
+            return None
+
+        organization = instance.current_organization
+        if organization is None:
+            return None
+
+        # "First user" == "didn't arrive via an invite". Direct signal (membership.invited_by IS NULL)
+        # avoids the earliest-joined heuristic, which silently reassigns creator status if the
+        # original creator leaves the org.
+        from posthog.models.organization import OrganizationMembership
+
+        membership = (
+            OrganizationMembership.objects.filter(organization=organization, user=instance)
+            .only("invited_by_id")
+            .first()
+        )
+        if membership is None:
+            return None
+        return membership.invited_by_id is None
+
+    @extend_schema_field(PendingInviteSerializer(many=True))
+    def get_pending_invites(self, instance: User) -> list[dict]:
+        """Non-expired organization invites matching the user's email for orgs they aren't already in.
+
+        Only returned when the serialized user is the requesting user — staff retrieving
+        another account should not see that user's private invites.
+        """
+        from django.utils import timezone as django_timezone
+
+        from posthog.constants import INVITE_DAYS_VALIDITY
+        from posthog.helpers.email_utils import EmailNormalizer
+        from posthog.models import OrganizationInvite, OrganizationMembership
+
+        request = self.context.get("request")
+        if not request or request.user.id != instance.id or not instance.email:
+            return []
+
+        normalized_email = EmailNormalizer.normalize(instance.email)
+        existing_org_ids = OrganizationMembership.objects.filter(user=instance).values_list(
+            "organization_id", flat=True
+        )
+
+        invites = (
+            OrganizationInvite.objects.filter(
+                target_email__iexact=normalized_email,
+                created_at__gt=django_timezone.now() - timedelta(days=INVITE_DAYS_VALIDITY),
+            )
+            .exclude(organization_id__in=existing_org_ids)
+            .select_related("organization")
+            .order_by("-created_at")
+        )
+
+        return [
+            {
+                "id": str(invite.id),
+                "target_email": invite.target_email,
+                "organization_id": str(invite.organization_id),
+                "organization_name": invite.organization.name,
+                "created_at": invite.created_at,
+            }
+            for invite in invites
+        ]
 
     def validate_set_current_organization(self, value: str) -> Organization:
         try:

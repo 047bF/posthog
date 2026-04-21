@@ -133,30 +133,45 @@ class OrganizationInvite(ModelActivityMixin, UUIDTModel):
     def use(self, user: "User", *, prevalidated: bool = False) -> None:
         if not prevalidated:
             self.validate(user=user)
-        user.join(organization=self.organization, level=cast(OrganizationMembership.Level, self.level))
+        # Wrap the membership creation, inviter attribution, private-project grants, and invite
+        # cleanup in one atomic block so a crash mid-flow can't leave the membership without its
+        # inviter, nor delete the invite before the membership is fully wired up.
+        with transaction.atomic():
+            membership = user.join(organization=self.organization, level=cast(OrganizationMembership.Level, self.level))
+            if self.created_by_id is not None:
+                # Bypass ModelActivityMixin on this follow-up write: the membership row was just
+                # created one line above, and a "created" signal has already fired. An "updated"
+                # signal here would be spurious noise and adds a pre-update query.
+                OrganizationMembership.objects.filter(pk=membership.pk).update(invited_by_id=self.created_by_id)
+                membership.invited_by_id = self.created_by_id
 
-        if self.is_setup_delegation:
-            self._mark_delegators_accepted(user)
+            if self.is_setup_delegation:
+                self._mark_delegators_accepted(user)
 
-        for item in self.private_project_access or []:
-            try:
-                team: Team = self.organization.teams.get(id=item["id"])
-                parent_membership = OrganizationMembership.objects.get(
-                    organization=self.organization,
-                    user=user,
+            for item in self.private_project_access or []:
+                try:
+                    team: Team = self.organization.teams.get(id=item["id"])
+                    parent_membership = OrganizationMembership.objects.get(
+                        organization=self.organization,
+                        user=user,
+                    )
+                except self.organization.teams.model.DoesNotExist:
+                    # if the team doesn't exist, it was probably deleted. We can still continue with the invite.
+                    continue
+
+                AccessControl.objects.create(
+                    team=team,
+                    resource="project",
+                    resource_id=str(team.id),
+                    organization_member=parent_membership,
+                    access_level=item["level"],
                 )
-            except self.organization.teams.model.DoesNotExist:
-                # if the team doesn't exist, it was probably deleted. We can still continue with the invite.
-                continue
 
-            AccessControl.objects.create(
-                team=team,
-                resource="project",
-                resource_id=str(team.id),
-                organization_member=parent_membership,
-                access_level=item["level"],
-            )
+            OrganizationInvite.objects.filter(
+                organization=self.organization, target_email__iexact=self.target_email
+            ).delete()
 
+        # Side effects that don't need the membership/invite rows are fine to run after commit.
         self._sync_user_product_list_for_accessible_teams(user)
 
         if is_email_available(with_absolute_urls=True):
@@ -168,9 +183,6 @@ class OrganizationInvite(ModelActivityMixin, UUIDTModel):
                     "organization_id": self.organization_id,
                 }
             )
-        OrganizationInvite.objects.filter(
-            organization=self.organization, target_email__iexact=self.target_email
-        ).delete()
 
     def _mark_delegators_accepted(self, accepting_user: "User") -> None:
         from posthog.models.user import User
