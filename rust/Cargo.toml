@@ -47,6 +47,7 @@ members = [
     "personhog-proto",
     "personhog-replica",
     "personhog-router",
+    "personhog-cannon",
     "warm-flags-cache",
 ]
 
