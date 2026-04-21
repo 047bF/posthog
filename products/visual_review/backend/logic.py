@@ -236,10 +236,22 @@ REVIEW_STATE_FILTERS: dict[str, Q] = {
 }
 
 
-def list_runs_for_team(team_id: int, review_state: str | None = None) -> db_models.QuerySet[Run]:
+def list_runs_for_team(
+    team_id: int,
+    review_state: str | None = None,
+    pr_number: int | None = None,
+    commit_sha: str | None = None,
+    branch: str | None = None,
+) -> db_models.QuerySet[Run]:
     qs = Run.objects.filter(team_id=team_id).select_related("repo").order_by("-created_at")
     if review_state and review_state in REVIEW_STATE_FILTERS:
         qs = qs.filter(REVIEW_STATE_FILTERS[review_state])
+    if pr_number is not None:
+        qs = qs.filter(pr_number=pr_number)
+    if commit_sha:
+        qs = qs.filter(commit_sha=commit_sha)
+    if branch:
+        qs = qs.filter(branch=branch)
     return qs
 
 

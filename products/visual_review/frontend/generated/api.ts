@@ -124,7 +124,7 @@ export const visualReviewReposPartialUpdate = async (
 }
 
 /**
- * List runs for the team, optionally filtered by review state.
+ * List runs for the team, optionally filtered by review state, PR number, commit SHA, or branch.
  */
 export const getVisualReviewRunsListUrl = (projectId: string, params?: VisualReviewRunsListParams) => {
     const normalizedParams = new URLSearchParams()

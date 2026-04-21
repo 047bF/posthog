@@ -40010,6 +40010,14 @@ export namespace Schemas {
 
     export type VisualReviewRunsListParams = {
     /**
+     * Filter by branch name
+     */
+    branch?: string;
+    /**
+     * Filter by full commit SHA
+     */
+    commit_sha?: string;
+    /**
      * Number of results to return per page.
      */
     limit?: number;
@@ -40017,6 +40025,10 @@ export namespace Schemas {
      * The initial index from which to return the results.
      */
     offset?: number;
+    /**
+     * Filter by GitHub PR number
+     */
+    pr_number?: number;
     /**
      * Filter by review state
      */

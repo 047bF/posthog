@@ -265,6 +265,14 @@ export type VisualReviewReposListParams = {
 
 export type VisualReviewRunsListParams = {
     /**
+     * Filter by branch name
+     */
+    branch?: string
+    /**
+     * Filter by full commit SHA
+     */
+    commit_sha?: string
+    /**
      * Number of results to return per page.
      */
     limit?: number
@@ -272,6 +280,10 @@ export type VisualReviewRunsListParams = {
      * The initial index from which to return the results.
      */
     offset?: number
+    /**
+     * Filter by GitHub PR number
+     */
+    pr_number?: number
     /**
      * Filter by review state
      */
