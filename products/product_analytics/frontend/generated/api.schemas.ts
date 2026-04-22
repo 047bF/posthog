@@ -4591,6 +4591,7 @@ export const IntegrationKindApi = {
     CustomerioApp: 'customerio-app',
     CustomerioWebhook: 'customerio-webhook',
     CustomerioTrack: 'customerio-track',
+    Postgresql: 'postgresql',
 } as const
 
 export interface ErrorTrackingExternalReferenceIntegrationApi {
