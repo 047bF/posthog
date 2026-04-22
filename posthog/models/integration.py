@@ -3395,7 +3395,6 @@ class TLS(NamedTuple):
 
     ssl_mode: Literal["prefer", "require", "verify-ca", "verify-full"]
     ssl_root_cert: str | Literal["system"] = MISSING_CERT_PATH
-    ssl_password: str | None = None
 
 
 class PostgreSQLIntegration:
@@ -3413,7 +3412,6 @@ class PostgreSQLIntegration:
         user: str,
         password: str,
         ssl_mode: Literal["prefer", "require", "verify-ca", "verify-full"] = "require",
-        ssl_password: str | None = None,
         ssl_root_cert: str | Literal["system"] | None = None,
         created_by: User | None = None,
     ) -> Integration:
@@ -3431,7 +3429,6 @@ class PostgreSQLIntegration:
                 },
                 "sensitive_config": {
                     "password": password,
-                    "ssl_password": ssl_password,
                 },
                 "created_by": created_by,
             },
@@ -3454,7 +3451,6 @@ class PostgreSQLIntegration:
             return TLS(
                 ssl_mode=self.integration.config["ssl_mode"],
                 ssl_root_cert=ssl_root_cert,
-                ssl_password=self.integration.sensitive_config.get("ssl_password", None),
             )
         else:
             # Preserve the default ssl_root_cert if one was not provided
