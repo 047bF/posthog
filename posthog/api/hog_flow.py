@@ -4,6 +4,7 @@ import uuid as uuid_mod
 from datetime import timedelta
 from typing import Optional, cast
 
+from django.conf import settings
 from django.db.models import QuerySet
 from django.utils import timezone
 
@@ -289,6 +290,12 @@ class HogFlowScheduleSerializer(serializers.ModelSerializer):
 
 class HogFlowMinimalSerializer(serializers.ModelSerializer):
     created_by = UserBasicSerializer(read_only=True)
+    affected_by_incident_2026_04_22 = serializers.SerializerMethodField(
+        help_text="True if this workflow is in the incident-2026-04-22 affected list (set via env var)."
+    )
+
+    def get_affected_by_incident_2026_04_22(self, obj) -> bool:
+        return str(obj.id) in settings.WORKFLOWS_INCIDENT_2026_04_22_AFFECTED_IDS
 
     class Meta:
         model = HogFlow
@@ -310,6 +317,7 @@ class HogFlowMinimalSerializer(serializers.ModelSerializer):
             "abort_action",
             "variables",
             "billable_action_types",
+            "affected_by_incident_2026_04_22",
         ]
         read_only_fields = fields
 
@@ -347,6 +355,7 @@ class HogFlowSerializer(HogFlowMinimalSerializer):
             "abort_action",
             "variables",
             "billable_action_types",
+            "affected_by_incident_2026_04_22",
         ]
         read_only_fields = [
             "id",
@@ -355,6 +364,7 @@ class HogFlowSerializer(HogFlowMinimalSerializer):
             "created_by",
             "abort_action",
             "billable_action_types",  # Computed field, not user-editable
+            "affected_by_incident_2026_04_22",
         ]
 
     def validate(self, data):

@@ -16,6 +16,7 @@ import { ProductKey } from '~/queries/schema/schema-general'
 import { ActivityScope } from '~/types'
 
 import { batchWorkflowJobsLogic } from './batchWorkflowJobsLogic'
+import { AffectedWorkflowIncidentBanner } from './incidents/AffectedWorkflowIncidentBanner'
 import { Workflow } from './Workflow'
 import { workflowLogic } from './workflowLogic'
 import { WorkflowLogs } from './WorkflowLogs'
@@ -98,6 +99,12 @@ export function WorkflowScene(props: WorkflowSceneLogicProps): JSX.Element {
         <SceneContent className="h-full flex flex-col grow" data-attr="workflow-scene">
             <BindLogic logic={workflowLogic} props={{ id: props.id, tabId: props.tabId, templateId, editTemplateId }}>
                 <WorkflowSceneHeader {...props} />
+                <AffectedWorkflowIncidentBanner
+                    affected={
+                        (originalWorkflow as unknown as { affected_by_incident_2026_04_22?: boolean })
+                            ?.affected_by_incident_2026_04_22
+                    }
+                />
                 {/* Only show Logs and Metrics tabs if the workflow has already been created */}
                 {!props.id || props.id === 'new' ? (
                     <Workflow {...props} />

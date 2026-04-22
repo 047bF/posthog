@@ -636,3 +636,10 @@ SURVEYS_API_USE_HYPERCACHE_TOKENS = get_list(os.getenv("SURVEYS_API_USE_HYPERCAC
 SURVEYS_API_USE_REMOTE_CONFIG_COMPARE = get_from_env(
     "SURVEYS_API_USE_REMOTE_CONFIG_COMPARE", False, type_cast=str_to_bool
 )
+
+# Hogflows affected by the 2026-04 dedup false-positive incident. Populated at deploy time from
+# ClickHouse log_entries analysis. The HogFlow serializer exposes a boolean per workflow so the
+# frontend can render an in-app incident banner without shipping the list in the public repo.
+WORKFLOWS_INCIDENT_2026_04_22_AFFECTED_IDS = frozenset(
+    get_list(os.getenv("WORKFLOWS_INCIDENT_2026_04_22_AFFECTED_IDS", ""))
+)
