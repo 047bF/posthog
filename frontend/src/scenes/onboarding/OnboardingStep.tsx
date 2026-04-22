@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { useActions, useValues } from 'kea'
 
 import { IconArrowRight } from '@posthog/icons'
-import { LemonButton, Link } from '@posthog/lemon-ui'
+import { LemonButton } from '@posthog/lemon-ui'
 
 import { supportLogic } from 'lib/components/Support/supportLogic'
 import { eventUsageLogic } from 'lib/utils/eventUsageLogic'
@@ -10,8 +10,7 @@ import { eventUsageLogic } from 'lib/utils/eventUsageLogic'
 import { OnboardingStepKey } from '~/types'
 
 import { OnboardingBreadcrumbs } from './OnboardingBreadcrumbs'
-import { onboardingExitLogic } from './onboardingExitLogic'
-import { OnboardingExitModal } from './OnboardingExitModal'
+import { OnboardingExitAction } from './OnboardingExitAction'
 import { onboardingLogic, stepKeyToTitle } from './onboardingLogic'
 
 export const OnboardingStep = ({
@@ -52,7 +51,6 @@ export const OnboardingStep = ({
     const { completeOnboarding, goToNextStep } = useActions(onboardingLogic)
     const { reportOnboardingStepCompleted, reportOnboardingStepSkipped } = useActions(eventUsageLogic)
     const { openSupportForm } = useActions(supportLogic)
-    const { openExitModal } = useActions(onboardingExitLogic)
 
     const advance: () => void = !hasNextStep ? completeOnboarding : goToNextStep
 
@@ -115,13 +113,8 @@ export const OnboardingStep = ({
                         </LemonButton>
                     )}
                 </div>
-                <div className="mt-6 text-center">
-                    <Link onClick={openExitModal} data-attr="onboarding-exit-link" subtle>
-                        I'm not the right person to set this up
-                    </Link>
-                </div>
+                <OnboardingExitAction />
             </div>
-            <OnboardingExitModal />
         </>
     )
 }

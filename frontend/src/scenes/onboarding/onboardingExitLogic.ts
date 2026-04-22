@@ -107,6 +107,12 @@ export const onboardingExitLogic = kea<onboardingExitLogicType>([
             posthog.capture('onboarding exit modal opened', { step_at_open: values.stepKey || null })
         },
         submitDelegation: async () => {
+            // Guard against double-submit from Enter-Enter or rapid button double-click. The
+            // listener is re-entrant by default — a second dispatch would fire another POST
+            // before the first settles.
+            if (values.isSubmitting) {
+                return
+            }
             if (!values.canSubmitDelegation) {
                 return
             }
@@ -116,29 +122,57 @@ export const onboardingExitLogic = kea<onboardingExitLogicType>([
                 return
             }
             actions.setIsSubmitting(true)
+            let delegationCommitted = false
             try {
                 await api.create<OrganizationInviteType>(`api/organizations/${orgId}/invites/delegate/`, {
                     target_email: values.targetEmail.trim(),
                     message: values.message.trim(),
                     step_at_delegation: values.stepKey || '',
                 })
+                delegationCommitted = true
+                // Honest wording: 201 means the invite row is persisted, not that SMTP has delivered.
+                lemonToast.success(`Invite created — we'll email ${values.targetEmail.trim()}`)
+
                 // Seed the freshest user into userLogic BEFORE navigating, otherwise sceneLogic's
                 // onboarding-redirect check reads stale state and bounces us straight back to /onboarding.
-                const freshUser = await api.get<UserType>('api/users/@me/')
-                actions.loadUserSuccess(freshUser)
-                lemonToast.success(`Invite sent to ${values.targetEmail.trim()}`)
+                // Guard this refresh separately — if it fails after the POST succeeded, the
+                // delegation is still committed and the user just needs to refresh.
+                try {
+                    const freshUser = await api.get<UserType>('api/users/@me/')
+                    actions.loadUserSuccess(freshUser)
+                } catch {
+                    // Fall back to a plain loadUser() for retry; sceneLogic will pick up the
+                    // delegation state on the next render.
+                    actions.loadUser()
+                }
+
                 actions.closeExitModal()
                 router.actions.push(urls.default())
             } catch (error: any) {
+                if (delegationCommitted) {
+                    // POST succeeded but a follow-up step failed — don't show a scary error
+                    // that would make the user re-submit into `existing_invite`.
+                    actions.closeExitModal()
+                    router.actions.push(urls.default())
+                    return
+                }
                 lemonToast.error(extractErrorDetail(error, "Couldn't send the invitation. Please try again."))
             } finally {
                 actions.setIsSubmitting(false)
             }
         },
         submitSkip: async () => {
+            if (values.isSubmitting) {
+                return
+            }
+            const userUuid = values.user?.uuid
+            if (!userUuid) {
+                lemonToast.error('Please refresh and try again.')
+                return
+            }
             actions.setIsSubmitting(true)
             try {
-                const updatedUser = await api.create<UserType>('api/users/@me/onboarding/skip/', {
+                const updatedUser = await api.create<UserType>(`api/users/${userUuid}/onboarding/skip/`, {
                     reason: 'later',
                     step_at_skip: values.stepKey || '',
                 })

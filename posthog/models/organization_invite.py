@@ -2,7 +2,8 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Optional, cast
 
 from django.db import models, transaction
-from django.db.models import Q
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
 from django.utils import timezone
 
 import structlog
@@ -188,14 +189,10 @@ class OrganizationInvite(ModelActivityMixin, UUIDTModel):
         from posthog.models.user import User
 
         now = timezone.now()
-        # Single query covers both the delegator(s) pointing at this invite and the accepting user
-        # (needed for the case where the delegator and delegate happen to share an id path).
-        with transaction.atomic():
-            User.objects.filter(Q(onboarding_delegated_to_invite_id=self.id) | Q(pk=accepting_user.pk)).update(
-                onboarding_delegation_accepted_at=now
-            )
-        # Refresh the accepting user's in-memory timestamp so callers observing the instance see it.
-        accepting_user.onboarding_delegation_accepted_at = now
+        # Scope strictly to users who actually delegated through THIS invite. The accepting
+        # user is NOT a delegator of this invite — stamping them would corrupt the field's
+        # meaning for anyone who happens to be both a delegate here and a delegator elsewhere.
+        User.objects.filter(onboarding_delegated_to_invite_id=self.id).update(onboarding_delegation_accepted_at=now)
 
     def _sync_user_product_list_for_accessible_teams(self, user: "User") -> None:
         """Sync UserProductList for all teams the user has access to."""
@@ -214,7 +211,6 @@ class OrganizationInvite(ModelActivityMixin, UUIDTModel):
     def delete(self, *args, **kwargs):
         from posthog.models.activity_logging.model_activity import get_current_user, get_was_impersonated
         from posthog.models.signals import model_activity_signal
-        from posthog.models.user import User
 
         model_activity_signal.send(
             sender=self.__class__,
@@ -225,22 +221,41 @@ class OrganizationInvite(ModelActivityMixin, UUIDTModel):
             user=get_current_user(),
             was_impersonated=get_was_impersonated(),
         )
-
-        # If this is a cancelled/expired delegation invite, un-suppress the delegator's
-        # onboarding redirect. The FK is cleared via on_delete=SET_NULL, but
-        # onboarding_skipped_at/reason would otherwise keep the redirect suppressed forever.
-        if self.is_setup_delegation:
-            User.objects.filter(
-                onboarding_delegated_to_invite_id=self.id,
-                onboarding_skipped_reason="delegated",
-            ).update(
-                onboarding_skipped_at=None,
-                onboarding_skipped_reason=None,
-            )
-
         return super().delete(*args, **kwargs)
 
     def __str__(self):
         return absolute_uri(f"/signup/{self.id}")
 
     __repr__ = sane_repr("organization", "target_email", "created_by")
+
+
+# pre_delete fires BEFORE Django's Collector runs the SET_NULL update on User FKs pointing
+# at this invite, so we can still see which users delegated through it. It fires for both
+# instance.delete() and QuerySet.delete() (bulk deletes from use(), admin panel, cascade,
+# or cleanup jobs all go through Collector). Matching on the FK alone (not on the
+# denormalized reason) avoids a stuck-forever bug if the two fields ever drift.
+@receiver(pre_delete, sender=OrganizationInvite)
+def _unsuppress_delegator_onboarding_on_invite_delete(sender, instance: OrganizationInvite, **kwargs) -> None:
+    if not instance.is_setup_delegation:
+        return
+
+    from posthog.models.user import User
+
+    affected = list(User.objects.filter(onboarding_delegated_to_invite_id=instance.id).values_list("id", flat=True))
+    if not affected:
+        return
+
+    User.objects.filter(id__in=affected).update(
+        onboarding_skipped_at=None,
+        onboarding_skipped_reason=None,
+        onboarding_delegated_to_organization_id=None,
+    )
+    # Audit trail: bulk .update() bypasses ModelActivityMixin signals; log explicitly so ops
+    # can trace why a delegator's onboarding state was cleared.
+    logger.info(
+        "delegation_invite_deleted_unsuppressed_delegators",
+        invite_id=str(instance.id),
+        organization_id=str(instance.organization_id) if instance.organization_id else None,
+        user_ids=[str(uid) for uid in affected],
+        is_expired=instance.is_expired() if instance.created_at else False,
+    )

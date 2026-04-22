@@ -1,4 +1,5 @@
 import { useActions, useValues } from 'kea'
+import { useRef } from 'react'
 
 import { LemonButton, LemonDivider, LemonInput, LemonTextArea } from '@posthog/lemon-ui'
 
@@ -12,10 +13,14 @@ export function OnboardingExitModal(): JSX.Element {
     const { closeExitModal, setTargetEmail, setMessage, submitDelegation, submitSkip, setTab } =
         useActions(onboardingExitLogic)
 
+    // Track IME composition on the email input. SubmitEvent doesn't carry `isComposing`, so
+    // we watch composition events directly — otherwise CJK users pressing Enter to confirm
+    // a character would submit the form mid-composition.
+    const isComposingRef = useRef(false)
+
     const onDelegateSubmit = (e: React.FormEvent): void => {
         e.preventDefault()
-        // Skip submit while the user is mid-composition on an IME (e.g. CJK input methods).
-        if ((e.nativeEvent as any)?.isComposing) {
+        if (isComposingRef.current) {
             return
         }
         submitDelegation()
@@ -23,24 +28,30 @@ export function OnboardingExitModal(): JSX.Element {
 
     const onLaterSubmit = (e: React.FormEvent): void => {
         e.preventDefault()
-        if ((e.nativeEvent as any)?.isComposing) {
+        submitSkip()
+    }
+
+    // Block all close paths while a submit is in flight so we can't race the in-flight POST
+    // and leave the user with a committed delegation but a torn-down modal.
+    const handleClose = (): void => {
+        if (isSubmitting) {
             return
         }
-        submitSkip()
+        closeExitModal()
     }
 
     return (
         <LemonModal
             isOpen={isExitModalOpen}
-            onClose={closeExitModal}
+            onClose={handleClose}
+            closable={!isSubmitting}
             title="Not the right person to set this up?"
             description="Hand off setup to a teammate, or come back to it later."
         >
             <div className="flex flex-col gap-4" data-attr="onboarding-exit-modal">
-                <div role="tablist" aria-label="Onboarding exit options" className="flex gap-2">
+                <div className="flex gap-2">
                     <LemonButton
-                        role="tab"
-                        aria-selected={tab === 'delegate'}
+                        aria-pressed={tab === 'delegate'}
                         type={tab === 'delegate' ? 'primary' : 'secondary'}
                         onClick={() => setTab('delegate')}
                         data-attr="onboarding-exit-tab-delegate"
@@ -48,8 +59,7 @@ export function OnboardingExitModal(): JSX.Element {
                         Invite a teammate
                     </LemonButton>
                     <LemonButton
-                        role="tab"
-                        aria-selected={tab === 'later'}
+                        aria-pressed={tab === 'later'}
                         type={tab === 'later' ? 'primary' : 'secondary'}
                         onClick={() => setTab('later')}
                         data-attr="onboarding-exit-tab-later"
@@ -73,6 +83,12 @@ export function OnboardingExitModal(): JSX.Element {
                             onChange={setTargetEmail}
                             placeholder="engineer@example.com"
                             data-attr="onboarding-exit-email-input"
+                            onKeyDown={(e) => {
+                                // KeyboardEvent.isComposing is the right place to read IME state —
+                                // SubmitEvent doesn't carry it. Tracking here so the form submit
+                                // handler can skip while the user is mid-composition.
+                                isComposingRef.current = (e.nativeEvent as KeyboardEvent).isComposing
+                            }}
                         />
                         <label className="font-semibold mt-2" htmlFor="onboarding-exit-message">
                             Personal message (optional)
@@ -86,17 +102,22 @@ export function OnboardingExitModal(): JSX.Element {
                             minRows={3}
                         />
                         <p className="text-secondary text-xs m-0 mt-1">
-                            Your teammate will be invited as an admin so they can finish setup.
+                            Your teammate will be added as an admin so they can finish setup.
                         </p>
                         <div className="flex justify-end gap-2 mt-2">
-                            <LemonButton type="secondary" onClick={closeExitModal} htmlType="button">
+                            <LemonButton
+                                type="secondary"
+                                onClick={closeExitModal}
+                                htmlType="button"
+                                disabledReason={isSubmitting ? 'Sending invitation…' : undefined}
+                            >
                                 Cancel
                             </LemonButton>
                             <LemonButton
                                 type="primary"
                                 htmlType="submit"
                                 loading={isSubmitting}
-                                disabledReason={!canSubmitDelegation ? 'Enter a valid email address first' : undefined}
+                                disabledReason={!canSubmitDelegation ? 'Enter a valid email address' : undefined}
                                 data-attr="onboarding-exit-send-invitation"
                             >
                                 Send invitation
@@ -109,7 +130,12 @@ export function OnboardingExitModal(): JSX.Element {
                     <form onSubmit={onLaterSubmit} className="flex flex-col gap-3">
                         <p className="m-0">You can finish setup anytime from your settings.</p>
                         <div className="flex justify-end gap-2">
-                            <LemonButton type="secondary" onClick={closeExitModal} htmlType="button">
+                            <LemonButton
+                                type="secondary"
+                                onClick={closeExitModal}
+                                htmlType="button"
+                                disabledReason={isSubmitting ? 'Skipping…' : undefined}
+                            >
                                 Cancel
                             </LemonButton>
                             <LemonButton

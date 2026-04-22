@@ -1,11 +1,11 @@
 {% extends "email/base.html" %} {% load posthog_assets %} {% block section %}
 <h1 class="invite-header">
-    <strong>{{ invite.created_by.first_name }}</strong> wants you to set up PostHog for
+    <strong>{{ invite.created_by.first_name }}</strong> asked you to finish setting up PostHog for
     <strong>{{ invite.organization.name }}</strong>
 </h1>
 <p class="text-center">
-    <strong>{{ invite.created_by.first_name }}</strong> ({{ invite.created_by.email }}) created a PostHog account for
-    <strong>{{ invite.organization.name }}</strong> and is asking you to finish setting it up. Accept the invite below
+    <strong>{{ invite.created_by.first_name }}</strong> ({{ invite.created_by.email }}) started setting up PostHog for
+    <strong>{{ invite.organization.name }}</strong> and would like you to finish the setup. Accept the invite below
     to get started — you'll be taken through the full setup flow.
 </p>
 {% if invite.message %}

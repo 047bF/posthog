@@ -1499,9 +1499,12 @@ class TestOnboardingDelegationInviteAPI(APIBaseTest):
         )
         response = self.client.post(self._delegate_url(), {"target_email": "engineer@example.com"})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("existing_invite", str(response.content))
+        # Generic code used to avoid leaking distinct "existing_member" vs "existing_invite" signals.
+        self.assertIn("cannot_delegate_to_email", str(response.content))
 
-    def test_delegate_acceptance_marks_delegator_and_delegate(self):
+    def test_delegate_acceptance_marks_delegator_only(self):
+        # _mark_delegators_accepted stamps only users whose FK points at this invite.
+        # The delegate is NOT a delegator — their own onboarding_delegation_accepted_at stays null.
         response = self.client.post(self._delegate_url(), {"target_email": "engineer@example.com"})
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         invite = OrganizationInvite.objects.get(target_email="engineer@example.com")
@@ -1512,7 +1515,9 @@ class TestOnboardingDelegationInviteAPI(APIBaseTest):
         self.user.refresh_from_db()
         delegate.refresh_from_db()
         self.assertIsNotNone(self.user.onboarding_delegation_accepted_at)
-        self.assertIsNotNone(delegate.onboarding_delegation_accepted_at)
+        # Delegate was never a delegator; stamping this field here would pollute the meaning
+        # for users who happen to be a delegate in one org and a delegator in another.
+        self.assertIsNone(delegate.onboarding_delegation_accepted_at)
 
 
 class TestOnboardingSkipAPI(APIBaseTest):

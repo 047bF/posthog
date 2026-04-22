@@ -9,6 +9,7 @@ import { inviteLogic } from 'scenes/settings/organization/inviteLogic'
 
 import { ProductKey } from '~/queries/schema/schema-general'
 
+import { OnboardingExitAction } from '../../../OnboardingExitAction'
 import { UseCaseDefinition } from '../../../productRecommendations'
 import { availableOnboardingProducts, getProductIcon } from '../../../utils'
 import { productSelectionLogic } from '../../productSelectionLogic'
@@ -261,6 +262,7 @@ export function LegacyProductSelection(): JSX.Element {
             <div className="flex flex-col items-center justify-center flex-grow w-full">
                 {currentStep === 'choose_path' && <ChoosePathStep />}
                 {currentStep === 'product_selection' && <ProductSelectionStep />}
+                <OnboardingExitAction />
             </div>
         </div>
     )

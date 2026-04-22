@@ -14,6 +14,7 @@ from django.contrib.auth import login, update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from django.utils.html import escape
@@ -68,12 +69,12 @@ from posthog.event_usage import (
     report_user_updated,
     report_user_verified_email,
 )
+from posthog.exceptions_capture import capture_exception
 from posthog.helpers.session_cache import SessionCache
 from posthog.helpers.two_factor_session import set_two_factor_verified_in_session
 from posthog.middleware import get_impersonated_session_expires_at, is_read_only_impersonation
 from posthog.models import Team, User, UserScenePersonalisation
 from posthog.models.organization import Organization
-from posthog.models.organization_invite import OrganizationInvite
 from posthog.models.user import NOTIFICATION_DEFAULTS, ROLE_CHOICES, Notifications, ShortcutPosition
 from posthog.permissions import APIScopePermission, TimeSensitiveActionPermission, UserNoOrgMembershipDeletePermission
 from posthog.rate_limit import ToolbarOAuthRefreshThrottle, UserAuthenticationThrottle, UserEmailVerificationThrottle
@@ -133,9 +134,14 @@ class UserSerializer(serializers.ModelSerializer):
     scene_personalisation = ScenePersonalisationBasicSerializer(many=True, read_only=True)
     anonymize_data = ClassicBehaviorBooleanFieldSerializer()
     role_at_organization = serializers.ChoiceField(choices=ROLE_CHOICES, required=False)
-    onboarding_delegated_to_organization_id = serializers.SerializerMethodField(
+    onboarding_skipped_reason = serializers.ChoiceField(
+        choices=User.ONBOARDING_SKIPPED_REASONS, allow_null=True, required=False
+    )
+    onboarding_delegated_to_organization_id = serializers.UUIDField(
+        read_only=True,
+        allow_null=True,
         help_text="Organization ID of the pending delegation invite, if any. Used by the frontend "
-        "to scope the 'waiting for teammate' UI to the org where delegation was initiated."
+        "to scope the 'waiting for teammate' UI to the org where delegation was initiated.",
     )
     is_organization_first_user = serializers.SerializerMethodField()
 
@@ -218,19 +224,6 @@ class UserSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "password": {"write_only": True},
         }
-
-    def get_onboarding_delegated_to_organization_id(self, instance: User) -> Optional[str]:
-        invite_id = instance.onboarding_delegated_to_invite_id
-        if not invite_id:
-            return None
-        # invite_id is an internal FK stored on the user by the delegate endpoint
-        # (not user-supplied input); this read just returns the org of that invite.
-        org_id = (
-            OrganizationInvite.objects.filter(pk=invite_id)  # nosemgrep: idor-lookup-without-org
-            .values_list("organization_id", flat=True)
-            .first()
-        )
-        return str(org_id) if org_id else None
 
     def get_has_password(self, instance: User) -> bool:
         return bool(instance.password) and instance.has_usable_password()
@@ -763,7 +756,7 @@ class UserViewSet(
             },
         ),
     )
-    @action(methods=["POST"], detail=False, url_path="onboarding/skip")
+    @action(methods=["POST"], detail=True, url_path="onboarding/skip")
     def onboarding_skip(self, request, **kwargs):
         """
         Mark the current user as having exited onboarding with a non-delegated reason.
@@ -774,35 +767,62 @@ class UserViewSet(
         invite and sets reason="delegated". This endpoint rejects that reason so state
         can't be faked without a real invite.
         """
-        instance = cast(User, request.user)
+        instance = self.get_object()
 
-        reason = (request.data or {}).get("reason")
+        reason = (request.data or {}).get("reason") if isinstance(request.data, dict) else None
         if reason not in ("later", "other"):
             raise serializers.ValidationError(
                 {"reason": "Must be 'later' or 'other'. Use the delegate endpoint to hand off setup."},
                 code="invalid_input",
             )
 
-        step_at_skip = (request.data or {}).get("step_at_skip") or ""
+        step_at_skip = (request.data or {}).get("step_at_skip") if isinstance(request.data, dict) else ""
+        step_at_skip = step_at_skip or ""
 
-        # Idempotency: preserve the first skip timestamp and short-circuit repeat analytics.
-        already_skipped_non_delegated = bool(
-            instance.onboarding_skipped_at and instance.onboarding_skipped_reason in ("later", "other")
-        )
-        update_fields = []
-        if not already_skipped_non_delegated:
-            instance.onboarding_skipped_at = datetime.now(UTC)
-            update_fields.append("onboarding_skipped_at")
-        if instance.onboarding_skipped_reason != reason:
-            instance.onboarding_skipped_reason = reason
-            update_fields.append("onboarding_skipped_reason")
-        # A user who previously delegated and is now explicitly skipping "later" should not
-        # remain in the "waiting on teammate" UI — clear the stale FK.
-        if instance.onboarding_delegated_to_invite_id is not None:
-            instance.onboarding_delegated_to_invite = None
-            update_fields.append("onboarding_delegated_to_invite")
-        if update_fields:
-            instance.save(update_fields=update_fields)
+        from posthog.models.organization_invite import OrganizationInvite
+
+        with transaction.atomic():
+            locked = User.objects.select_for_update().get(pk=instance.pk)
+
+            # If the user has a pending (not-yet-accepted) delegation, cancel it atomically.
+            # Otherwise the delegate could still accept and silently become admin after the
+            # delegator thinks they've backed out.
+            pending_invite_id = (
+                locked.onboarding_delegated_to_invite_id if locked.onboarding_delegation_accepted_at is None else None
+            )
+            if pending_invite_id is not None:
+                # Per-instance delete() so ModelActivityMixin's signal fires and post_delete
+                # runs (which clears delegator state via the un-suppress receiver).
+                OrganizationInvite.objects.filter(pk=pending_invite_id).first() and OrganizationInvite.objects.get(
+                    pk=pending_invite_id
+                ).delete()
+                # Re-read the user since post_delete may have cleared some fields already.
+                locked.refresh_from_db()
+
+            # Idempotency: preserve the first skip timestamp and short-circuit repeat analytics.
+            already_skipped_non_delegated = bool(
+                locked.onboarding_skipped_at and locked.onboarding_skipped_reason in ("later", "other")
+            )
+            update_fields = []
+            if not already_skipped_non_delegated:
+                locked.onboarding_skipped_at = datetime.now(UTC)
+                update_fields.append("onboarding_skipped_at")
+            if locked.onboarding_skipped_reason != reason:
+                locked.onboarding_skipped_reason = reason
+                update_fields.append("onboarding_skipped_reason")
+            # A stale FK to a delegation invite the delegate already accepted can remain; clear it
+            # so the "waiting on teammate" UI doesn't re-engage.
+            if locked.onboarding_delegated_to_invite_id is not None:
+                locked.onboarding_delegated_to_invite = None
+                update_fields.append("onboarding_delegated_to_invite")
+            if locked.onboarding_delegated_to_organization_id is not None:
+                locked.onboarding_delegated_to_organization_id = None
+                update_fields.append("onboarding_delegated_to_organization_id")
+            if update_fields:
+                locked.save(update_fields=update_fields)
+
+            # Sync the in-memory instance that will be serialized back to the caller.
+            instance.refresh_from_db()
 
         if instance.distinct_id and not already_skipped_non_delegated:
             import posthoganalytics
@@ -813,8 +833,8 @@ class UserViewSet(
                     event="onboarding skipped later" if reason == "later" else "onboarding skipped",
                     properties={"step_at_skip": step_at_skip or None, "reason": reason},
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                capture_exception(exc)
 
         return Response(self.get_serializer(instance=instance).data)
 

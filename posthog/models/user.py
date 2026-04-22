@@ -213,15 +213,29 @@ class User(AbstractUser, UUIDTClassicModel, ModelActivityMixin):  # type: ignore
     )
 
     # Onboarding exit tracking. Set when the user explicitly leaves the onboarding flow (skip or delegate).
+    ONBOARDING_SKIPPED_REASONS = [
+        ("delegated", "Delegated to teammate"),
+        ("later", "Skipped for later"),
+        ("other", "Other"),
+    ]
     onboarding_skipped_at = models.DateTimeField(null=True, blank=True)
-    onboarding_skipped_reason = models.CharField(max_length=32, null=True, blank=True)
+    onboarding_skipped_reason = models.CharField(
+        max_length=32, null=True, blank=True, choices=ONBOARDING_SKIPPED_REASONS
+    )
+    # Index is created out-of-band via `CREATE INDEX CONCURRENTLY` in a follow-up migration —
+    # see 1113_onboarding_delegated_to_invite_index. `db_index=False` keeps Django's base AddField
+    # from emitting a blocking CREATE INDEX on posthog_user during deploy.
     onboarding_delegated_to_invite = models.ForeignKey(
         "posthog.OrganizationInvite",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="delegating_users",
+        db_index=False,
     )
+    # Denormalized org id: filled when the delegation invite is created so that `/api/users/@me/`
+    # doesn't need an extra DB query per page load just to surface which org the delegation is scoped to.
+    onboarding_delegated_to_organization_id = models.UUIDField(null=True, blank=True)
     onboarding_delegation_accepted_at = models.DateTimeField(null=True, blank=True)
 
     # DEPRECATED

@@ -376,6 +376,20 @@ class OrganizationInviteViewSet(
         """
         user = cast(User, self.request.user)
 
+        # Kill switch for the delegation flow. feature_enabled returns None when the flag
+        # doesn't exist — we treat that as "enabled" so this is a no-op until ops explicitly
+        # create the flag and flip it off.
+        flag_result = posthoganalytics.feature_enabled(
+            "onboarding-delegation",
+            str(user.distinct_id) if user.distinct_id else str(user.uuid),
+            send_feature_flag_events=False,
+        )
+        if flag_result is False:
+            raise exceptions.PermissionDenied(
+                "Onboarding delegation is currently disabled. Please complete setup yourself or contact your admin.",
+                code="delegation_disabled",
+            )
+
         input_serializer = OrganizationInviteDelegateSerializer(data=request.data)
         input_serializer.is_valid(raise_exception=True)
         target_email = EmailNormalizer.normalize(input_serializer.validated_data["target_email"])
@@ -394,32 +408,63 @@ class OrganizationInviteViewSet(
                 "Only organization admins can delegate setup, as delegation grants admin access."
             )
 
-        if EmailNormalizer.normalize(user.email) == target_email:
+        # Catch both primary-email self-delegation and the case where a user owns a secondary
+        # account with the target email — preventing an admin from granting themselves an
+        # extra admin seat via an alias.
+        user_email_matches = bool(user.email) and EmailNormalizer.normalize(user.email) == target_email
+        user_owns_target_email = User.objects.filter(email__iexact=target_email, id=user.id).exists()
+        if user_email_matches or user_owns_target_email:
             raise exceptions.ValidationError("You cannot delegate setup to yourself.", code="self_delegation")
 
-        if OrganizationMembership.objects.filter(
-            organization_id=self.organization_id,
-            user__email__iexact=target_email,
-        ).exists():
+        # Server-side gate: delegation only makes sense while the caller is still onboarding.
+        # Without this, an already-onboarded admin could replay the endpoint to escalate a
+        # stranger to admin via delegation-specific templates (they could do this via the
+        # regular invite endpoint too, but the dedicated template here is meant for first-run setup).
+        caller_team = user.team
+        if caller_team is not None and (caller_team.ingested_event or caller_team.completed_snippet_onboarding):
             raise exceptions.ValidationError(
-                "A user with this email address is already a member of this organization. "
-                "Choose a different teammate to invite.",
-                code="existing_member",
+                "Setup has already been completed — delegation is only available during initial onboarding.",
+                code="onboarding_complete",
             )
 
-        # Don't silently clobber a pending invite for the same email — that would destroy
-        # non-delegation state (level, private_project_access) and orphan any other delegator
-        # linked to it. Reject with a clear error; the caller can cancel the prior invite first.
-        existing = OrganizationInviteManager._get_invites_for_user_org(
-            organization_id=self.organization_id, target_email=target_email
-        ).first()
-        if existing is not None:
+        # Require email to be configured; otherwise the delegation quietly strands the
+        # delegator on the "waiting for teammate" screen forever.
+        if not is_email_available(with_absolute_urls=True):
             raise exceptions.ValidationError(
-                "There is already a pending invite for this email. Cancel it first if you want to delegate setup.",
-                code="existing_invite",
+                "Email isn't configured on this instance, so we can't send a delegation invite.",
+                code="email_not_configured",
             )
 
+        # Idempotency: catch double-submits, tab re-plays, and TOCTOU races on the existing-invite
+        # check by locking the delegator's row and re-reading their state inside the atomic block.
+        # If a delegation is already in flight for this user, return the existing invite rather
+        # than creating a duplicate (and emitting a second email).
         with transaction.atomic():
+            locked_user = User.objects.select_for_update().get(pk=user.pk)
+
+            if locked_user.onboarding_delegated_to_invite_id and locked_user.onboarding_delegation_accepted_at is None:
+                existing_invite = OrganizationInvite.objects.filter(
+                    pk=locked_user.onboarding_delegated_to_invite_id
+                ).first()
+                if existing_invite is not None and not existing_invite.is_expired():
+                    serializer = OrganizationInviteSerializer(existing_invite, context=self.get_serializer_context())
+                    return response.Response(serializer.data, status=status.HTTP_200_OK)
+
+            # Generic error on any pending-invite collision: leaks less about org membership
+            # than distinct existing_member / existing_invite codes.
+            already_known = OrganizationMembership.objects.filter(
+                organization_id=self.organization_id,
+                user__email__iexact=target_email,
+            ).exists()
+            pending_invite = OrganizationInviteManager._get_invites_for_user_org(
+                organization_id=self.organization_id, target_email=target_email
+            ).first()
+            if already_known or pending_invite is not None:
+                raise exceptions.ValidationError(
+                    "We can't send a delegation invite to this email — cancel any existing invite or ask a different teammate.",
+                    code="cannot_delegate_to_email",
+                )
+
             invite = OrganizationInvite.objects.create(
                 organization_id=self.organization_id,
                 created_by=user,
@@ -428,43 +473,52 @@ class OrganizationInviteViewSet(
                 level=OrganizationMembership.Level.ADMIN,
                 is_setup_delegation=True,
             )
-            # Transactional: link the delegator only after the invite row exists.
-            user.onboarding_delegated_to_invite = invite
-            user.onboarding_skipped_at = timezone.now()
-            user.onboarding_skipped_reason = "delegated"
-            user.save(
+            locked_user.onboarding_delegated_to_invite = invite
+            locked_user.onboarding_delegated_to_organization_id = self.organization_id
+            locked_user.onboarding_skipped_at = timezone.now()
+            locked_user.onboarding_skipped_reason = "delegated"
+            locked_user.save(
                 update_fields=[
                     "onboarding_delegated_to_invite",
+                    "onboarding_delegated_to_organization_id",
                     "onboarding_skipped_at",
                     "onboarding_skipped_reason",
                 ]
             )
-            if is_email_available(with_absolute_urls=True):
-                invite.emailing_attempt_made = True
-                invite.save(update_fields=["emailing_attempt_made"])
-                # Queue email after commit so SMTP latency doesn't block the request and
-                # a broker/SMTP failure doesn't 500 after committing delegator state.
-                invite_id = invite.id
+            invite.emailing_attempt_made = True
+            invite.save(update_fields=["emailing_attempt_made"])
 
-                def _queue_delegation_email() -> None:
+            # Queue email after commit so SMTP latency doesn't block the request. Wrap
+            # apply_async so a broker outage doesn't surface a 500 for an already-committed
+            # delegation (the user can retry via a resend action instead).
+            invite_id = invite.id
+            analytics_kwargs = {
+                "distinct_id": str(user.distinct_id) if user.distinct_id else None,
+                "event": "onboarding delegated",
+                "properties": {
+                    "target_email_domain": target_email.split("@")[-1] if "@" in target_email else None,
+                    "has_message": bool(message),
+                    "step_at_delegation": step_at_delegation or None,
+                    "invite_id": str(invite.id),
+                },
+            }
+
+            def _queue_delegation_email() -> None:
+                try:
                     send_invite.apply_async(kwargs={"invite_id": invite_id})
+                except Exception as exc:  # noqa: BLE001 - broker outage must not 500 a committed delegation
+                    capture_exception(exc)
 
-                transaction.on_commit(_queue_delegation_email)
+            def _fire_analytics() -> None:
+                if not analytics_kwargs["distinct_id"]:
+                    return
+                try:
+                    posthoganalytics.capture(**analytics_kwargs)
+                except Exception as exc:  # noqa: BLE001
+                    capture_exception(exc)
 
-        if user.distinct_id:
-            try:
-                posthoganalytics.capture(
-                    distinct_id=str(user.distinct_id),
-                    event="onboarding delegated",
-                    properties={
-                        "target_email_domain": target_email.split("@")[-1] if "@" in target_email else None,
-                        "has_message": bool(message),
-                        "step_at_delegation": step_at_delegation or None,
-                        "invite_id": str(invite.id),
-                    },
-                )
-            except Exception as exc:  # noqa: BLE001 - analytics must never break a mutation
-                capture_exception(exc)
+            transaction.on_commit(_queue_delegation_email)
+            transaction.on_commit(_fire_analytics)
 
         serializer = OrganizationInviteSerializer(invite, context=self.get_serializer_context())
         return response.Response(serializer.data, status=status.HTTP_201_CREATED)

@@ -20988,6 +20988,20 @@ export namespace Schemas {
     }
 
     /**
+     * * `delegated` - Delegated to teammate
+    * `later` - Skipped for later
+    * `other` - Other
+     */
+    export type OnboardingSkippedReasonEnum = typeof OnboardingSkippedReasonEnum[keyof typeof OnboardingSkippedReasonEnum];
+
+
+    export const OnboardingSkippedReasonEnum = {
+      Delegated: 'delegated',
+      Later: 'later',
+      Other: 'other',
+    } as const;
+
+    /**
      * * `latest` - latest
     * `earliest` - earliest
      */
@@ -24109,8 +24123,7 @@ export namespace Schemas {
       passkeys_enabled_for_2fa?: boolean | null;
       /** @nullable */
       readonly onboarding_skipped_at: string | null;
-      /** @nullable */
-      readonly onboarding_skipped_reason: string | null;
+      onboarding_skipped_reason?: OnboardingSkippedReasonEnum | NullEnum | null;
       /** @nullable */
       readonly onboarding_delegated_to_invite: string | null;
       /**
@@ -28550,8 +28563,7 @@ export namespace Schemas {
       passkeys_enabled_for_2fa?: boolean | null;
       /** @nullable */
       readonly onboarding_skipped_at?: string | null;
-      /** @nullable */
-      readonly onboarding_skipped_reason?: string | null;
+      onboarding_skipped_reason?: OnboardingSkippedReasonEnum | NullEnum | null;
       /** @nullable */
       readonly onboarding_delegated_to_invite?: string | null;
       /**

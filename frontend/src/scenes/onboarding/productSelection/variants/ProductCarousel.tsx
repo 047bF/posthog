@@ -26,6 +26,7 @@ import { inviteLogic } from 'scenes/settings/organization/inviteLogic'
 
 import { ProductKey } from '~/queries/schema/schema-general'
 
+import { OnboardingExitAction } from '../../OnboardingExitAction'
 import { availableOnboardingProducts, getProductIcon, toSentenceCase } from '../../utils'
 import { type RecommendationSource, productSelectionLogic } from '../productSelectionLogic'
 
@@ -724,6 +725,7 @@ export function ProductCarousel({ mode, recommendationSource }: ProductCarouselP
                         </p>
                     </>
                 )}
+                <OnboardingExitAction />
             </div>
         </div>
     )

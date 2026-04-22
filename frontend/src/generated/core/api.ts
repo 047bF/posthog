@@ -1784,6 +1784,32 @@ export const usersHedgehogConfigPartialUpdate = async (
     })
 }
 
+/**
+ * Mark the current user as having exited onboarding with a non-delegated reason.
+Idempotent: the skip timestamp is only set on the first successful call.
+
+Callers wanting to delegate setup to a teammate must use the dedicated
+/organizations/{id}/invites/delegate/ endpoint, which atomically creates the
+invite and sets reason="delegated". This endpoint rejects that reason so state
+can't be faked without a real invite.
+ */
+export const getUsersOnboardingSkipCreateUrl = (uuid: string) => {
+    return `/api/users/${uuid}/onboarding/skip/`
+}
+
+export const usersOnboardingSkipCreate = async (
+    uuid: string,
+    onboardingSkipRequestApi: OnboardingSkipRequestApi,
+    options?: RequestInit
+): Promise<void> => {
+    return apiMutator<void>(getUsersOnboardingSkipCreateUrl(uuid), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(onboardingSkipRequestApi),
+    })
+}
+
 export const getUsersScenePersonalisationCreateUrl = (uuid: string) => {
     return `/api/users/${uuid}/scene_personalisation/`
 }
@@ -1924,31 +1950,6 @@ export const usersCancelEmailChangeRequestPartialUpdate = async (
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...options?.headers },
         body: JSON.stringify(patchedUserApi),
-    })
-}
-
-/**
- * Mark the current user as having exited onboarding with a non-delegated reason.
-Idempotent: the skip timestamp is only set on the first successful call.
-
-Callers wanting to delegate setup to a teammate must use the dedicated
-/organizations/{id}/invites/delegate/ endpoint, which atomically creates the
-invite and sets reason="delegated". This endpoint rejects that reason so state
-can't be faked without a real invite.
- */
-export const getUsersOnboardingSkipCreateUrl = () => {
-    return `/api/users/onboarding/skip/`
-}
-
-export const usersOnboardingSkipCreate = async (
-    onboardingSkipRequestApi: OnboardingSkipRequestApi,
-    options?: RequestInit
-): Promise<void> => {
-    return apiMutator<void>(getUsersOnboardingSkipCreateUrl(), {
-        ...options,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(onboardingSkipRequestApi),
     })
 }
 

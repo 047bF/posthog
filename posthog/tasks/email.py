@@ -222,7 +222,7 @@ def send_invite(invite_id: str) -> None:
     is_delegation = bool(invite.is_setup_delegation)
     template_name = "delegation_invite" if is_delegation else "invite"
     if is_delegation:
-        subject = f"{inviter_name} wants you to set up PostHog for {invite.organization.name}"
+        subject = f"{inviter_name} asked you to finish setting up PostHog for {invite.organization.name}"
     else:
         subject = f"{inviter_name} invited you to join {invite.organization.name} on PostHog"
 

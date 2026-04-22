@@ -1634,6 +1634,20 @@ export const ShortcutPositionEnumApi = {
 } as const
 
 /**
+ * * `delegated` - Delegated to teammate
+ * `later` - Skipped for later
+ * `other` - Other
+ */
+export type OnboardingSkippedReasonEnumApi =
+    (typeof OnboardingSkippedReasonEnumApi)[keyof typeof OnboardingSkippedReasonEnumApi]
+
+export const OnboardingSkippedReasonEnumApi = {
+    Delegated: 'delegated',
+    Later: 'later',
+    Other: 'other',
+} as const
+
+/**
  * Shape of each item in UserSerializer.pending_invites.
  */
 export interface PendingInviteApi {
@@ -1706,8 +1720,7 @@ export interface UserApi {
     passkeys_enabled_for_2fa?: boolean | null
     /** @nullable */
     readonly onboarding_skipped_at: string | null
-    /** @nullable */
-    readonly onboarding_skipped_reason: string | null
+    onboarding_skipped_reason?: OnboardingSkippedReasonEnumApi | NullEnumApi | null
     /** @nullable */
     readonly onboarding_delegated_to_invite: string | null
     /**
@@ -1793,8 +1806,7 @@ export interface PatchedUserApi {
     passkeys_enabled_for_2fa?: boolean | null
     /** @nullable */
     readonly onboarding_skipped_at?: string | null
-    /** @nullable */
-    readonly onboarding_skipped_reason?: string | null
+    onboarding_skipped_reason?: OnboardingSkippedReasonEnumApi | NullEnumApi | null
     /** @nullable */
     readonly onboarding_delegated_to_invite?: string | null
     /**
