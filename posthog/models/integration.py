@@ -3735,7 +3735,6 @@ class PostgreSQLIntegration:
     def integration_from_config(
         cls,
         team_id: int,
-        organization_id: str,
         host: str,
         port: int,
         user: str,
