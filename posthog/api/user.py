@@ -879,11 +879,11 @@ class UserViewSet(
             import posthoganalytics
 
             try:
+                # Single event name with `reason` as a property keeps dashboards simple —
+                # counting skips doesn't require unioning event names.
                 posthoganalytics.capture(
                     distinct_id=str(instance.distinct_id),
-                    event=(
-                        "onboarding skipped later" if reason == OnboardingSkippedReason.LATER else "onboarding skipped"
-                    ),
+                    event="onboarding skipped",
                     properties={"step_at_skip": step_at_skip or None, "reason": reason},
                 )
             except Exception as exc:

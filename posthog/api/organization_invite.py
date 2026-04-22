@@ -380,9 +380,15 @@ class OrganizationInviteViewSet(
         """
         user = cast(User, self.request.user)
 
-        # Kill switch for the delegation flow. feature_enabled returns None when the flag
-        # doesn't exist — we treat that as "enabled" so this is a no-op until ops explicitly
-        # create the flag and flip it off.
+        # Kill switch for the delegation flow. feature_enabled() is a synchronous call with
+        # no timeout; if the flag service is slow every delegation request blocks on it.
+        # The None-return-means-enabled fallback is load-bearing in two ways:
+        #   1. If the flag hasn't been created yet (ops haven't configured it), this stays
+        #      a no-op and doesn't 500.
+        #   2. If the flag service is down entirely and the SDK returns None, we fail open
+        #      (delegation still works) rather than blocking every request.
+        # Only an explicit False result disables the flow. Do not change the fallback
+        # without also plumbing local evaluation or a timeout.
         flag_result = posthoganalytics.feature_enabled(
             "onboarding-delegation",
             str(user.distinct_id) if user.distinct_id else str(user.uuid),
@@ -453,6 +459,18 @@ class OrganizationInviteViewSet(
                 locked_user=locked_user, organization_id=self.organization_id
             )
             if existing_invite is not None:
+                # If the previous delegation committed its DB rows but the email failed to
+                # enqueue (broker outage at the time), emailing_attempt_made stays False.
+                # Retry the email dispatch instead of silently returning the same invite
+                # with no email ever having been sent.
+                if not existing_invite.emailing_attempt_made:
+                    schedule_delegation_side_effects(
+                        invite_id=existing_invite.id,
+                        distinct_id=str(user.distinct_id) if user.distinct_id else None,
+                        target_email=target_email,
+                        message=message,
+                        step_at_delegation=step_at_delegation,
+                    )
                 serializer = OrganizationInviteSerializer(existing_invite, context=self.get_serializer_context())
                 return response.Response(serializer.data, status=status.HTTP_200_OK)
 
