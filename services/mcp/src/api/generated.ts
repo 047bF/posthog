@@ -21048,6 +21048,11 @@ export namespace Schemas {
       text_content?: string;
       /** Updated notebook title. */
       title?: string;
+      /**
+       * ProseMirror cursor head position after applying steps.
+       * @nullable
+       */
+      cursor_head?: number | null;
     }
 
     export interface NotebookMinimal {
