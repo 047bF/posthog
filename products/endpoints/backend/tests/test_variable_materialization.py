@@ -2372,6 +2372,17 @@ class TestDownstreamCTEClassifier(APIBaseTest):
         assert plan.reject_reason is None
         assert plan.shape == DownstreamCTEShape.AGGREGATION
 
+    def test_aggregation_shape_uppercase_function(self):
+        # Uppercase aggregate names must still be classified as AGGREGATION, otherwise
+        # the downstream CTE falls back to PROJECTION and the GROUP BY is never added.
+        expr = self._get_cte(
+            "WITH base AS (SELECT 1 AS x), agg AS (SELECT MAX(x) AS m FROM base) SELECT * FROM agg",
+            "agg",
+        )
+        plan = _classify_downstream_cte("agg", expr, {"base", "agg"}, ["event_name"])
+        assert plan.reject_reason is None
+        assert plan.shape == DownstreamCTEShape.AGGREGATION
+
     def test_distinct_shape(self):
         expr = self._get_cte(
             "WITH base AS (SELECT 1 AS x), u AS (SELECT DISTINCT x FROM base) SELECT * FROM u",
@@ -2433,6 +2444,32 @@ class TestDownstreamCTEClassifier(APIBaseTest):
         plan = _classify_downstream_cte("nested", expr, {"base", "nested"}, ["event_name"])
         assert plan.reject_reason is not None
         assert "nested subquery" in plan.reject_reason
+
+    def test_scalar_subquery_in_where_rejected(self):
+        # Scalar subquery reading from a propagating CTE can't be rewritten to carry the
+        # variable column — after propagation it returns multiple rows per value.
+        expr = self._get_cte(
+            "WITH base AS (SELECT 1 AS x), "
+            "agg AS (SELECT max(x) AS m FROM base), "
+            "use AS (SELECT x FROM base WHERE x = (SELECT m FROM agg)) "
+            "SELECT * FROM use",
+            "use",
+        )
+        plan = _classify_downstream_cte("use", expr, {"base", "agg", "use"}, ["event_name"])
+        assert plan.reject_reason is not None
+        assert "scalar subquery" in plan.reject_reason
+
+    def test_scalar_subquery_in_select_rejected(self):
+        expr = self._get_cte(
+            "WITH base AS (SELECT 1 AS x), "
+            "agg AS (SELECT max(x) AS m FROM base), "
+            "use AS (SELECT x, (SELECT m FROM agg) AS latest FROM base) "
+            "SELECT * FROM use",
+            "use",
+        )
+        plan = _classify_downstream_cte("use", expr, {"base", "agg", "use"}, ["event_name"])
+        assert plan.reject_reason is not None
+        assert "scalar subquery" in plan.reject_reason
 
     def test_column_name_collision_rejected(self):
         expr = self._get_cte(
@@ -2499,6 +2536,39 @@ class TestDownstreamAnalysisRejections(APIBaseTest):
         can_materialize, reason, _ = analyze_variables_for_materialization(query)
         assert can_materialize is False
         assert "nested subquery" in reason
+
+    def test_downstream_scalar_subquery_in_where_rejected(self):
+        # Regression: before the fix, a scalar subquery reading from a propagating CTE
+        # was silently accepted, producing a materialized query that hit
+        # "Scalar subquery returned more than one row" at execution.
+        query = {
+            "kind": "HogQLQuery",
+            "query": (
+                "WITH base AS (SELECT event, distinct_id, timestamp FROM events WHERE event = {variables.event_name}), "
+                "latest AS (SELECT max(timestamp) AS ts FROM base), "
+                "use AS (SELECT distinct_id FROM base WHERE timestamp = (SELECT ts FROM latest)) "
+                "SELECT distinct_id FROM use"
+            ),
+            "variables": {"var-1": {"code_name": "event_name", "value": "$pageview"}},
+        }
+        can_materialize, reason, _ = analyze_variables_for_materialization(query)
+        assert can_materialize is False
+        assert "scalar subquery" in reason
+
+    def test_downstream_scalar_subquery_in_select_rejected(self):
+        query = {
+            "kind": "HogQLQuery",
+            "query": (
+                "WITH base AS (SELECT event, distinct_id, timestamp FROM events WHERE event = {variables.event_name}), "
+                "latest AS (SELECT max(timestamp) AS ts FROM base), "
+                "use AS (SELECT distinct_id, (SELECT ts FROM latest) AS ts FROM base) "
+                "SELECT distinct_id FROM use"
+            ),
+            "variables": {"var-1": {"code_name": "event_name", "value": "$pageview"}},
+        }
+        can_materialize, reason, _ = analyze_variables_for_materialization(query)
+        assert can_materialize is False
+        assert "scalar subquery" in reason
 
     def test_downstream_union_leg_unable_to_propagate_rejected(self):
         query = {

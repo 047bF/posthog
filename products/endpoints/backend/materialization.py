@@ -7,7 +7,7 @@ from posthog.schema import HogQLQuery, HogQLQueryModifiers
 
 from posthog.hogql import ast
 from posthog.hogql.functions.aggregations import COMBINATORS
-from posthog.hogql.functions.mapping import HOGQL_AGGREGATIONS, find_hogql_aggregation
+from posthog.hogql.functions.mapping import find_hogql_aggregation
 from posthog.hogql.parser import parse_select
 from posthog.hogql.printer import to_printed_hogql
 from posthog.hogql.timings import HogQLTimings
@@ -552,6 +552,64 @@ def _select_from_has_nested_reference(
     return False
 
 
+def _has_any_from_propagating_reference(node: Optional[ast.Expr], propagating: set[str]) -> bool:
+    """Return True if any ``JoinExpr`` anywhere in the subtree pulls from a propagating CTE.
+
+    Unlike ``_has_nested_propagating_reference`` (which restricts to ``select_from``), this walks
+    the whole subtree, so scalar subqueries buried inside WHERE / SELECT / HAVING / ORDER BY that
+    read from a propagating CTE are detected.
+    """
+    if node is None:
+        return False
+
+    class _Finder(TraversingVisitor):
+        def __init__(self) -> None:
+            super().__init__()
+            self.found = False
+
+        def visit_join_expr(self, n: ast.JoinExpr) -> None:
+            if isinstance(n.table, ast.Field) and len(n.table.chain) == 1:
+                if str(n.table.chain[0]) in propagating:
+                    self.found = True
+                    return
+            super().visit_join_expr(n)
+
+    finder = _Finder()
+    finder.visit(node)
+    return finder.found
+
+
+def _body_has_non_top_from_propagating_reference(
+    cte: ast.SelectQuery,
+    propagating: set[str],
+) -> bool:
+    """Return True if any clause of ``cte`` other than its top-level ``select_from`` chain
+    references a propagating CTE — e.g. a scalar subquery in WHERE / SELECT / HAVING / ORDER BY
+    / GROUP BY / LIMIT reading from it.
+
+    Top-level FROM references are handled by ``_collect_propagating_sources_top_level``.
+    References anywhere else would require correlated subqueries to carry the variable column,
+    which the transformer can't produce — so callers should reject.
+    """
+    clauses: list[Optional[ast.Expr]] = [
+        *(cte.select or []),
+        cte.where,
+        cte.prewhere,
+        cte.having,
+        cte.qualify,
+        *(cte.group_by or []),
+        *(cte.order_by or []),
+        *(cte.array_join_list or []),
+        *(cte.interpolate or []),
+        cte.limit,
+        cte.offset,
+    ]
+    for clause in clauses:
+        if _has_any_from_propagating_reference(clause, propagating):
+            return True
+    return False
+
+
 def _emits_column(select_query: ast.SelectQuery, column_name: str) -> bool:
     for expr in select_query.select or []:
         name = _select_column_name(expr)
@@ -635,6 +693,16 @@ def _classify_downstream_cte(
             reject_reason="CTE variable propagation requires top-level FROM references; nested subquery reference not supported",
         )
 
+    if _body_has_non_top_from_propagating_reference(cte_expr, propagating):
+        return DownstreamCTEPlan(
+            cte_name=cte_name,
+            shape=DownstreamCTEShape.PROJECTION,
+            reject_reason=(
+                "CTE variable propagation requires top-level FROM references; "
+                "scalar subquery reading from a propagating CTE not supported"
+            ),
+        )
+
     if not sources:
         return DownstreamCTEPlan(
             cte_name=cte_name,
@@ -667,15 +735,13 @@ def _classify_downstream_cte(
 
 
 def _select_has_aggregate(node: ast.SelectQuery) -> bool:
-    agg_names = set(HOGQL_AGGREGATIONS.keys())
-
     class _AggFinder(TraversingVisitor):
         def __init__(self) -> None:
             super().__init__()
             self.found = False
 
         def visit_call(self, n: ast.Call) -> None:
-            if n.name in agg_names:
+            if find_hogql_aggregation(n.name) is not None:
                 self.found = True
                 return
             super().visit_call(n)
@@ -1163,7 +1229,6 @@ class MaterializationTransformer(CloningVisitor):
     @staticmethod
     def _has_aggregate_functions(node: ast.SelectQuery) -> bool:
         """Check if any SELECT expression uses an aggregate function (sum, count, avg, etc.)."""
-        agg_names = set(HOGQL_AGGREGATIONS.keys())
 
         class AggFinder(TraversingVisitor):
             def __init__(self):
@@ -1171,7 +1236,7 @@ class MaterializationTransformer(CloningVisitor):
                 self.found = False
 
             def visit_call(self, node: ast.Call):
-                if node.name in agg_names:
+                if find_hogql_aggregation(node.name) is not None:
                     self.found = True
                 else:
                     super().visit_call(node)
