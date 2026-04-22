@@ -5,6 +5,7 @@ import hashlib
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from django.core.cache import cache
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 
@@ -28,18 +29,30 @@ MAX_COMMENT_BODY_LENGTH = 4000
 
 RESUME_COOLDOWN = timedelta(seconds=60)
 
+MAX_RESUMES = 10
+
 CHECK_RUN_ACCEPTABLE_CONCLUSIONS = {"success", "neutral", "cancelled", "skipped"}
 
 
 def find_task_run(pr_url: str | None = None, branch: str | None = None) -> TaskRun | None:
     if pr_url:
-        task_run = TaskRun.objects.filter(output__pr_url=pr_url).select_related(*TASK_RUN_SELECT_RELATED).first()
-        if task_run:
+        task_run = (
+            TaskRun.objects.filter(output__pr_url=pr_url)
+            .select_related(*TASK_RUN_SELECT_RELATED)
+            .order_by("-created_at")
+            .first()
+        )
+        if task_run and not task_run.is_terminal:
             return task_run
 
     if branch:
-        task_run = TaskRun.objects.filter(branch=branch).select_related(*TASK_RUN_SELECT_RELATED).first()
-        if task_run:
+        task_run = (
+            TaskRun.objects.filter(branch=branch)
+            .select_related(*TASK_RUN_SELECT_RELATED)
+            .order_by("-created_at")
+            .first()
+        )
+        if task_run and not task_run.is_terminal:
             return task_run
 
     return None
@@ -281,6 +294,26 @@ def _signal_running_workflow(task_run: TaskRun) -> None:
 
 def _create_resume_run(task_run: TaskRun, pr_url: str) -> None:
     from products.tasks.backend.temporal.client import execute_task_processing_workflow
+
+    cooldown_key = f"tasks:resume_cooldown:{task_run.task_id}"
+    if not cache.add(cooldown_key, True, timeout=int(RESUME_COOLDOWN.total_seconds())):
+        logger.info(
+            "github_comment_resume_cooldown_active",
+            task_id=str(task_run.task_id),
+            run_id=str(task_run.id),
+        )
+        return
+
+    existing_resumes = TaskRun.objects.filter(state__resume_from_run_id=str(task_run.id)).count()
+    if existing_resumes >= MAX_RESUMES:
+        logger.info(
+            "github_comment_resume_limit_reached",
+            task_id=str(task_run.task_id),
+            run_id=str(task_run.id),
+            existing_resumes=existing_resumes,
+            max_resumes=MAX_RESUMES,
+        )
+        return
 
     task = task_run.task
     created_by = task.created_by
