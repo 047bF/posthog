@@ -492,7 +492,7 @@ export class MCP extends McpAgent<Env> {
     private async resolveVersionFlag(): Promise<number | undefined> {
         try {
             const distinctId = await this.getDistinctId()
-            return (await isFeatureFlagEnabled('mcp-version-2', distinctId, this.ctx)) ? 2 : undefined
+            return (await isFeatureFlagEnabled('mcp-version-2', distinctId)) ? 2 : undefined
         } catch {
             return undefined
         }
@@ -506,7 +506,7 @@ export class MCP extends McpAgent<Env> {
                 return undefined
             }
             const distinctId = await this.getDistinctId()
-            return await evaluateFeatureFlags(flagKeys, distinctId, this.ctx)
+            return await evaluateFeatureFlags(flagKeys, distinctId)
         } catch {
             return undefined
         }
