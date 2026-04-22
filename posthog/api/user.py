@@ -74,8 +74,15 @@ from posthog.helpers.session_cache import SessionCache
 from posthog.helpers.two_factor_session import set_two_factor_verified_in_session
 from posthog.middleware import get_impersonated_session_expires_at, is_read_only_impersonation
 from posthog.models import Team, User, UserScenePersonalisation
+from posthog.models.onboarding_delegation import cancel_pending_delegation, clear_delegation_state
 from posthog.models.organization import Organization
-from posthog.models.user import NOTIFICATION_DEFAULTS, ROLE_CHOICES, Notifications, ShortcutPosition
+from posthog.models.user import (
+    NOTIFICATION_DEFAULTS,
+    ROLE_CHOICES,
+    Notifications,
+    OnboardingSkippedReason,
+    ShortcutPosition,
+)
 from posthog.permissions import APIScopePermission, TimeSensitiveActionPermission, UserNoOrgMembershipDeletePermission
 from posthog.rate_limit import ToolbarOAuthRefreshThrottle, UserAuthenticationThrottle, UserEmailVerificationThrottle
 from posthog.tasks import user_identify
@@ -751,7 +758,9 @@ class UserViewSet(
         request=inline_serializer(
             name="OnboardingSkipRequest",
             fields={
-                "reason": serializers.ChoiceField(choices=["later", "other"], required=True),
+                "reason": serializers.ChoiceField(
+                    choices=[OnboardingSkippedReason.LATER, OnboardingSkippedReason.OTHER], required=True
+                ),
                 "step_at_skip": serializers.CharField(required=False, allow_blank=True),
             },
         ),
@@ -771,7 +780,8 @@ class UserViewSet(
         instance = self.get_object()
 
         reason = (request.data or {}).get("reason") if isinstance(request.data, dict) else None
-        if reason not in ("later", "other"):
+        non_delegated_reasons = {OnboardingSkippedReason.LATER, OnboardingSkippedReason.OTHER}
+        if reason not in non_delegated_reasons:
             raise serializers.ValidationError(
                 {"reason": "Must be 'later' or 'other'. Use the delegate endpoint to hand off setup."},
                 code="invalid_input",
@@ -779,8 +789,6 @@ class UserViewSet(
 
         step_at_skip = (request.data or {}).get("step_at_skip") if isinstance(request.data, dict) else ""
         step_at_skip = step_at_skip or ""
-
-        from posthog.models.organization_invite import OrganizationInvite
 
         with transaction.atomic():
             locked = User.objects.select_for_update().get(pk=instance.pk)
@@ -792,27 +800,14 @@ class UserViewSet(
                 locked.onboarding_delegated_to_invite_id if locked.onboarding_delegation_accepted_at is None else None
             )
             if pending_invite_id is not None:
-                # Per-instance delete() so ModelActivityMixin's signal fires and post_delete
-                # runs. Keep this race-safe and org-scoped so stale FKs can't affect unrelated
-                # invites if a user switched orgs.
-                pending_invite_qs = OrganizationInvite.objects.filter(
-                    pk=pending_invite_id,
-                    is_setup_delegation=True,
-                    created_by_id=locked.id,
-                )
-                if locked.onboarding_delegated_to_organization_id:
-                    pending_invite_qs = pending_invite_qs.filter(
-                        organization_id=locked.onboarding_delegated_to_organization_id
-                    )
-                pending_invite = pending_invite_qs.first()
-                if pending_invite is not None:
-                    pending_invite.delete()
+                # Per-instance delete() so ModelActivityMixin signals still fire.
+                cancel_pending_delegation(locked_user=locked)
                 # Re-read the user since post_delete may have cleared some fields already.
                 locked.refresh_from_db()
 
             # Idempotency: preserve the first skip timestamp and short-circuit repeat analytics.
             already_skipped_non_delegated = bool(
-                locked.onboarding_skipped_at and locked.onboarding_skipped_reason in ("later", "other")
+                locked.onboarding_skipped_at and locked.onboarding_skipped_reason in non_delegated_reasons
             )
             update_fields = []
             if not already_skipped_non_delegated:
@@ -823,15 +818,22 @@ class UserViewSet(
                 update_fields.append("onboarding_skipped_reason")
             # A stale FK to a delegation invite the delegate already accepted can remain; clear it
             # so the "waiting on teammate" UI doesn't re-engage.
-            if locked.onboarding_delegated_to_invite_id is not None:
-                locked.onboarding_delegated_to_invite = None
-                update_fields.append("onboarding_delegated_to_invite")
-            if locked.onboarding_delegated_to_organization_id is not None:
-                locked.onboarding_delegated_to_organization_id = None
-                update_fields.append("onboarding_delegated_to_organization_id")
-            if locked.onboarding_delegation_accepted_at is not None:
-                locked.onboarding_delegation_accepted_at = None
-                update_fields.append("onboarding_delegation_accepted_at")
+            had_delegation_state = any(
+                [
+                    locked.onboarding_delegated_to_invite_id is not None,
+                    locked.onboarding_delegated_to_organization_id is not None,
+                    locked.onboarding_delegation_accepted_at is not None,
+                ]
+            )
+            if had_delegation_state:
+                clear_delegation_state(locked, save=False)
+                update_fields.extend(
+                    [
+                        "onboarding_delegated_to_invite",
+                        "onboarding_delegated_to_organization_id",
+                        "onboarding_delegation_accepted_at",
+                    ]
+                )
             if update_fields:
                 locked.save(update_fields=update_fields)
 
@@ -844,7 +846,9 @@ class UserViewSet(
             try:
                 posthoganalytics.capture(
                     distinct_id=str(instance.distinct_id),
-                    event="onboarding skipped later" if reason == "later" else "onboarding skipped",
+                    event=(
+                        "onboarding skipped later" if reason == OnboardingSkippedReason.LATER else "onboarding skipped"
+                    ),
                     properties={"step_at_skip": step_at_skip or None, "reason": reason},
                 )
             except Exception as exc:

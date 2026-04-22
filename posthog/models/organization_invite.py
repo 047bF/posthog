@@ -14,6 +14,7 @@ from posthog.email import is_email_available
 from posthog.helpers.email_utils import EmailNormalizer, EmailValidationHelper
 from posthog.models.activity_logging.model_activity import ModelActivityMixin
 from posthog.models.file_system.user_product_list import backfill_user_product_list_for_new_user
+from posthog.models.onboarding_delegation import mark_delegators_accepted
 from posthog.models.organization import OrganizationMembership
 from posthog.models.team import Team
 from posthog.models.utils import UUIDTModel, sane_repr
@@ -186,13 +187,10 @@ class OrganizationInvite(ModelActivityMixin, UUIDTModel):
             )
 
     def _mark_delegators_accepted(self, accepting_user: "User") -> None:
-        from posthog.models.user import User
-
-        now = timezone.now()
         # Scope strictly to users who actually delegated through THIS invite. The accepting
         # user is NOT a delegator of this invite — stamping them would corrupt the field's
         # meaning for anyone who happens to be both a delegate here and a delegator elsewhere.
-        User.objects.filter(onboarding_delegated_to_invite_id=self.id).update(onboarding_delegation_accepted_at=now)
+        mark_delegators_accepted(invite_id=self.id)
 
     def _sync_user_product_list_for_accessible_teams(self, user: "User") -> None:
         """Sync UserProductList for all teams the user has access to."""
@@ -236,6 +234,12 @@ class OrganizationInvite(ModelActivityMixin, UUIDTModel):
 # denormalized reason) avoids a stuck-forever bug if the two fields ever drift.
 @receiver(pre_delete, sender=OrganizationInvite)
 def _unsuppress_delegator_onboarding_on_invite_delete(sender, instance: OrganizationInvite, **kwargs) -> None:
+    """Re-enable onboarding only for delegators whose delegation is still pending.
+
+    Intent table:
+    - invite accepted -> do nothing here (accepted users keep onboarding suppressed)
+    - invite cancelled/expired/deleted before acceptance -> clear suppression so onboarding resumes
+    """
     if not instance.is_setup_delegation:
         return
 

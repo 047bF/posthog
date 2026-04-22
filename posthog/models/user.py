@@ -163,6 +163,12 @@ class ShortcutPosition(models.TextChoices):
     HIDDEN = "hidden", "Hidden"
 
 
+class OnboardingSkippedReason(models.TextChoices):
+    DELEGATED = "delegated", "Delegated to teammate"
+    LATER = "later", "Skipped for later"
+    OTHER = "other", "Other"
+
+
 class User(AbstractUser, UUIDTClassicModel, ModelActivityMixin):  # type: ignore[django-manager-missing]
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
@@ -213,11 +219,7 @@ class User(AbstractUser, UUIDTClassicModel, ModelActivityMixin):  # type: ignore
     )
 
     # Onboarding exit tracking. Set when the user explicitly leaves the onboarding flow (skip or delegate).
-    ONBOARDING_SKIPPED_REASONS = [
-        ("delegated", "Delegated to teammate"),
-        ("later", "Skipped for later"),
-        ("other", "Other"),
-    ]
+    ONBOARDING_SKIPPED_REASONS = OnboardingSkippedReason.choices
     onboarding_skipped_at = models.DateTimeField(null=True, blank=True)
     onboarding_skipped_reason = models.CharField(
         max_length=32, null=True, blank=True, choices=ONBOARDING_SKIPPED_REASONS

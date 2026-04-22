@@ -2,18 +2,17 @@ import { actions, connect, kea, listeners, path, reducers, selectors } from 'kea
 import { router } from 'kea-router'
 import posthog from 'posthog-js'
 
-import api from 'lib/api'
 import { lemonToast } from 'lib/lemon-ui/LemonToast/LemonToast'
 import { organizationLogic } from 'scenes/organizationLogic'
 import { urls } from 'scenes/urls'
 import { userLogic } from 'scenes/userLogic'
 
-import { OrganizationInviteType, UserType } from '~/types'
+import { invitesDelegateCreate, usersOnboardingSkipCreate, usersRetrieve } from '~/generated/core/api'
+import { OnboardingSkipRequestReasonEnumApi } from '~/generated/core/api.schemas'
 
 import type { onboardingExitLogicType } from './onboardingExitLogicType'
 import { onboardingLogic } from './onboardingLogic'
 
-export type ExitReason = 'delegated' | 'later' | 'other'
 export type ExitTab = 'delegate' | 'later'
 
 const isValidEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
@@ -124,7 +123,7 @@ export const onboardingExitLogic = kea<onboardingExitLogicType>([
             actions.setIsSubmitting(true)
             let delegationCommitted = false
             try {
-                await api.create<OrganizationInviteType>(`api/organizations/${orgId}/invites/delegate/`, {
+                await invitesDelegateCreate(orgId, {
                     target_email: values.targetEmail.trim(),
                     message: values.message.trim(),
                     step_at_delegation: values.stepKey || '',
@@ -137,12 +136,17 @@ export const onboardingExitLogic = kea<onboardingExitLogicType>([
                 // onboarding-redirect check reads stale state and bounces us straight back to /onboarding.
                 // Guard this refresh separately — if it fails after the POST succeeded, the
                 // delegation is still committed and the user just needs to refresh.
-                try {
-                    const freshUser = await api.get<UserType>('api/users/@me/')
-                    actions.loadUserSuccess(freshUser)
-                } catch {
-                    // Fall back to a plain loadUser() for retry; sceneLogic will pick up the
-                    // delegation state on the next render.
+                const userUuid = values.user?.uuid
+                if (userUuid) {
+                    try {
+                        const freshUser = await usersRetrieve(userUuid)
+                        actions.loadUserSuccess(freshUser)
+                    } catch {
+                        // Fall back to a plain loadUser() for retry; sceneLogic will pick up the
+                        // delegation state on the next render.
+                        actions.loadUser()
+                    }
+                } else {
                     actions.loadUser()
                 }
 
@@ -172,8 +176,8 @@ export const onboardingExitLogic = kea<onboardingExitLogicType>([
             }
             actions.setIsSubmitting(true)
             try {
-                const updatedUser = await api.create<UserType>(`api/users/${userUuid}/onboarding/skip/`, {
-                    reason: 'later',
+                const updatedUser = await usersOnboardingSkipCreate(userUuid, {
+                    reason: OnboardingSkipRequestReasonEnumApi.Later,
                     step_at_skip: values.stepKey || '',
                 })
                 // The skip endpoint returns the updated user — seed state directly so sceneLogic

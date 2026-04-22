@@ -7,6 +7,10 @@ import { LemonModal } from 'lib/lemon-ui/LemonModal'
 
 import { onboardingExitLogic } from './onboardingExitLogic'
 
+export function shouldSubmitDelegate(isComposing: boolean): boolean {
+    return !isComposing
+}
+
 export function OnboardingExitModal(): JSX.Element {
     const { isExitModalOpen, targetEmail, message, canSubmitDelegation, isSubmitting, tab } =
         useValues(onboardingExitLogic)
@@ -20,7 +24,7 @@ export function OnboardingExitModal(): JSX.Element {
 
     const onDelegateSubmit = (e: React.FormEvent): void => {
         e.preventDefault()
-        if (isComposingRef.current) {
+        if (!shouldSubmitDelegate(isComposingRef.current)) {
             return
         }
         submitDelegation()

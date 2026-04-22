@@ -43,6 +43,7 @@ import { AccessControlLevel } from '~/types'
 import { handleLoginRedirect } from './authentication/loginLogic'
 import { billingLogic } from './billing/billingLogic'
 import { parseCouponCampaign } from './coupons/utils'
+import { isOnboardingRedirectSuppressed } from './onboarding/onboardingDelegationState'
 import { organizationLogic } from './organizationLogic'
 import { preflightLogic } from './PreflightCheck/preflightLogic'
 import type { sceneLogicType } from './sceneLogicType'
@@ -1221,12 +1222,7 @@ export const sceneLogic = kea<sceneLogicType>([
                         // (skipped for later, or delegated to a teammate with a pending invite).
                         // If the delegation invite is cancelled or expires, the backend clears
                         // onboarding_delegated_to_invite and the redirect re-fires.
-                        !user.onboarding_skipped_at &&
-                        !(
-                            user.onboarding_delegated_to_invite &&
-                            !user.onboarding_delegation_accepted_at &&
-                            user.onboarding_delegated_to_organization_id === user.organization?.id
-                        ) &&
+                        !isOnboardingRedirectSuppressed(user) &&
                         !pathPrefixesOnboardingNotRequiredFor.some((path) =>
                             removeProjectIdIfPresent(location.pathname).startsWith(path)
                         )

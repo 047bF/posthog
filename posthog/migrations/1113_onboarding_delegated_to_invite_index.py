@@ -14,6 +14,12 @@ class Migration(migrations.Migration):
     We drop/recreate the index name instead of CREATE ... IF NOT EXISTS so interrupted
     prior concurrent builds (which can leave an invalid index artifact) don't get silently
     accepted as success.
+
+    Operational notes:
+    - transient behavior: between DROP and CREATE there can be a brief window without this
+      index while the migration runs.
+    - rollback: reverse migration drops the index concurrently; it does not recreate any prior
+      invalid artifact, and re-applying this migration will rebuild the index.
     """
 
     atomic = False

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any, Optional, cast
 from uuid import UUID
 
@@ -16,9 +16,13 @@ from posthog.api.utils import action
 from posthog.constants import INVITE_DAYS_VALIDITY
 from posthog.email import is_email_available
 from posthog.event_usage import report_bulk_invited, report_team_member_invited
-from posthog.exceptions_capture import capture_exception
 from posthog.helpers.email_utils import EmailNormalizer
 from posthog.models import OrganizationInvite, OrganizationMembership
+from posthog.models.onboarding_delegation import (
+    get_existing_pending_delegation_invite,
+    schedule_delegation_side_effects,
+    set_delegated_state,
+)
 from posthog.models.organization import Organization
 from posthog.models.team.team import Team
 from posthog.models.user import User
@@ -69,7 +73,7 @@ class OrganizationInviteManager:
         }
 
         if not include_expired:
-            filters["created_at__gt"] = datetime.now() - timedelta(days=INVITE_DAYS_VALIDITY)
+            filters["created_at__gt"] = timezone.now() - timedelta(days=INVITE_DAYS_VALIDITY)
 
         return OrganizationInvite.objects.filter(**filters).order_by("-created_at")
 
@@ -445,27 +449,12 @@ class OrganizationInviteViewSet(
             Organization.objects.select_for_update().get(id=self.organization_id)
             locked_user = User.objects.select_for_update().get(pk=user.pk)
 
-            if locked_user.onboarding_delegated_to_invite_id and locked_user.onboarding_delegation_accepted_at is None:
-                existing_invite = OrganizationInvite.objects.filter(
-                    pk=locked_user.onboarding_delegated_to_invite_id,
-                    organization_id=self.organization_id,
-                    is_setup_delegation=True,
-                    created_by_id=locked_user.id,
-                ).first()
-                if existing_invite is not None and not existing_invite.is_expired():
-                    serializer = OrganizationInviteSerializer(existing_invite, context=self.get_serializer_context())
-                    return response.Response(serializer.data, status=status.HTTP_200_OK)
-                # Stale pointer (deleted/expired/wrong org): clear it before creating a fresh invite.
-                locked_user.onboarding_delegated_to_invite = None
-                locked_user.onboarding_delegated_to_organization_id = None
-                locked_user.onboarding_delegation_accepted_at = None
-                locked_user.save(
-                    update_fields=[
-                        "onboarding_delegated_to_invite",
-                        "onboarding_delegated_to_organization_id",
-                        "onboarding_delegation_accepted_at",
-                    ]
-                )
+            existing_invite = get_existing_pending_delegation_invite(
+                locked_user=locked_user, organization_id=self.organization_id
+            )
+            if existing_invite is not None:
+                serializer = OrganizationInviteSerializer(existing_invite, context=self.get_serializer_context())
+                return response.Response(serializer.data, status=status.HTTP_200_OK)
 
             # Generic error on any pending-invite collision: leaks less about org membership
             # than distinct existing_member / existing_invite codes.
@@ -490,53 +479,15 @@ class OrganizationInviteViewSet(
                 level=OrganizationMembership.Level.ADMIN,
                 is_setup_delegation=True,
             )
-            locked_user.onboarding_delegated_to_invite = invite
-            locked_user.onboarding_delegated_to_organization_id = self.organization_id
-            locked_user.onboarding_skipped_at = timezone.now()
-            locked_user.onboarding_skipped_reason = "delegated"
-            locked_user.onboarding_delegation_accepted_at = None
-            locked_user.save(
-                update_fields=[
-                    "onboarding_delegated_to_invite",
-                    "onboarding_delegated_to_organization_id",
-                    "onboarding_skipped_at",
-                    "onboarding_skipped_reason",
-                    "onboarding_delegation_accepted_at",
-                ]
+            set_delegated_state(locked_user=locked_user, invite=invite, organization_id=self.organization_id)
+
+            schedule_delegation_side_effects(
+                invite_id=invite.id,
+                distinct_id=str(user.distinct_id) if user.distinct_id else None,
+                target_email=target_email,
+                message=message,
+                step_at_delegation=step_at_delegation,
             )
-
-            # Queue email after commit so SMTP latency doesn't block the request. Wrap
-            # apply_async so a broker outage doesn't surface a 500 for an already-committed
-            # delegation (the user can retry via a resend action instead).
-            invite_id = invite.id
-            analytics_kwargs = {
-                "distinct_id": str(user.distinct_id) if user.distinct_id else None,
-                "event": "onboarding delegated",
-                "properties": {
-                    "target_email_domain": target_email.split("@")[-1] if "@" in target_email else None,
-                    "has_message": bool(message),
-                    "step_at_delegation": step_at_delegation or None,
-                    "invite_id": str(invite.id),
-                },
-            }
-
-            def _queue_delegation_email() -> None:
-                try:
-                    send_invite.apply_async(kwargs={"invite_id": invite_id})
-                    OrganizationInvite.objects.filter(pk=invite_id).update(emailing_attempt_made=True)
-                except Exception as exc:  # noqa: BLE001 - broker outage must not 500 a committed delegation
-                    capture_exception(exc)
-
-            def _fire_analytics() -> None:
-                if not analytics_kwargs["distinct_id"]:
-                    return
-                try:
-                    posthoganalytics.capture(**analytics_kwargs)
-                except Exception as exc:  # noqa: BLE001
-                    capture_exception(exc)
-
-            transaction.on_commit(_queue_delegation_email)
-            transaction.on_commit(_fire_analytics)
 
         serializer = OrganizationInviteSerializer(invite, context=self.get_serializer_context())
         return response.Response(serializer.data, status=status.HTTP_201_CREATED)
