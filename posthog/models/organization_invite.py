@@ -241,11 +241,19 @@ def _unsuppress_delegator_onboarding_on_invite_delete(sender, instance: Organiza
 
     from posthog.models.user import User
 
-    affected = list(User.objects.filter(onboarding_delegated_to_invite_id=instance.id).values_list("id", flat=True))
-    if not affected:
+    # Accepting a delegation invite marks delegators with onboarding_delegation_accepted_at.
+    # We only "un-suppress" users who still have a pending delegation (accepted_at is null),
+    # i.e. explicit cancellation/expiry paths. This avoids bouncing accepted delegators back
+    # into onboarding immediately after their teammate accepts.
+    pending_delegators = User.objects.filter(
+        onboarding_delegated_to_invite_id=instance.id,
+        onboarding_delegation_accepted_at__isnull=True,
+    )
+    affected_count = pending_delegators.count()
+    if affected_count == 0:
         return
 
-    User.objects.filter(id__in=affected).update(
+    pending_delegators.update(
         onboarding_skipped_at=None,
         onboarding_skipped_reason=None,
         onboarding_delegated_to_organization_id=None,
@@ -256,6 +264,6 @@ def _unsuppress_delegator_onboarding_on_invite_delete(sender, instance: Organiza
         "delegation_invite_deleted_unsuppressed_delegators",
         invite_id=str(instance.id),
         organization_id=str(instance.organization_id) if instance.organization_id else None,
-        user_ids=[str(uid) for uid in affected],
+        affected_count=affected_count,
         is_expired=instance.is_expired() if instance.created_at else False,
     )

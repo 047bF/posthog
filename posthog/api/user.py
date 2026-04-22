@@ -755,6 +755,7 @@ class UserViewSet(
                 "step_at_skip": serializers.CharField(required=False, allow_blank=True),
             },
         ),
+        responses=UserSerializer,
     )
     @action(methods=["POST"], detail=True, url_path="onboarding/skip")
     def onboarding_skip(self, request, **kwargs):
@@ -792,10 +793,20 @@ class UserViewSet(
             )
             if pending_invite_id is not None:
                 # Per-instance delete() so ModelActivityMixin's signal fires and post_delete
-                # runs (which clears delegator state via the un-suppress receiver).
-                OrganizationInvite.objects.filter(pk=pending_invite_id).first() and OrganizationInvite.objects.get(
-                    pk=pending_invite_id
-                ).delete()
+                # runs. Keep this race-safe and org-scoped so stale FKs can't affect unrelated
+                # invites if a user switched orgs.
+                pending_invite_qs = OrganizationInvite.objects.filter(
+                    pk=pending_invite_id,
+                    is_setup_delegation=True,
+                    created_by_id=locked.id,
+                )
+                if locked.onboarding_delegated_to_organization_id:
+                    pending_invite_qs = pending_invite_qs.filter(
+                        organization_id=locked.onboarding_delegated_to_organization_id
+                    )
+                pending_invite = pending_invite_qs.first()
+                if pending_invite is not None:
+                    pending_invite.delete()
                 # Re-read the user since post_delete may have cleared some fields already.
                 locked.refresh_from_db()
 
@@ -818,6 +829,9 @@ class UserViewSet(
             if locked.onboarding_delegated_to_organization_id is not None:
                 locked.onboarding_delegated_to_organization_id = None
                 update_fields.append("onboarding_delegated_to_organization_id")
+            if locked.onboarding_delegation_accepted_at is not None:
+                locked.onboarding_delegation_accepted_at = None
+                update_fields.append("onboarding_delegation_accepted_at")
             if update_fields:
                 locked.save(update_fields=update_fields)
 

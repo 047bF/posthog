@@ -46,6 +46,7 @@ export function OnboardingWaitingForTeammate(): JSX.Element {
             return
         }
         setIsTakingOver(true)
+        let deletionCommitted = false
         try {
             // Cancel the delegation invite first — on the backend this fires post_delete
             // which clears the delegator's onboarding_skipped_at/reason via the signal. If we
@@ -53,6 +54,7 @@ export function OnboardingWaitingForTeammate(): JSX.Element {
             // render and we bounce back here.
             if (pendingInviteId && user?.organization?.id) {
                 await api.delete(`api/organizations/${user.organization.id}/invites/${pendingInviteId}/`)
+                deletionCommitted = true
             }
             // Re-fetch user so kea state reflects the cleared delegation fields before the
             // sceneLogic redirect runs at the new route.
@@ -60,7 +62,12 @@ export function OnboardingWaitingForTeammate(): JSX.Element {
             loadUserSuccess(refreshed)
             router.actions.push(urls.onboarding())
         } catch {
-            lemonToast.error("Couldn't cancel the delegation. Try cancelling from organization settings instead.")
+            if (deletionCommitted) {
+                loadUser()
+                router.actions.push(urls.onboarding())
+                return
+            }
+            lemonToast.error("Couldn't cancel the delegation. Try again or manage invites in organization settings.")
             setIsTakingOver(false)
         }
     }
@@ -75,7 +82,7 @@ export function OnboardingWaitingForTeammate(): JSX.Element {
             </p>
             <div className="flex gap-2">
                 <LemonButton type="secondary" to={urls.settings('organization-members')}>
-                    View pending invite
+                    Manage invites
                 </LemonButton>
                 <LemonButton type="primary" onClick={takeOverSetup} loading={isTakingOver}>
                     Set up PostHog myself

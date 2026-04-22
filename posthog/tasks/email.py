@@ -215,10 +215,14 @@ def should_send_pipeline_error_notification(
 @shared_task(**EMAIL_TASK_KWARGS)
 def send_invite(invite_id: str) -> None:
     campaign_key: str = f"invite_email_{invite_id}"
-    invite: OrganizationInvite = OrganizationInvite.objects.select_related("created_by", "organization").get(
-        id=invite_id
+    invite = OrganizationInvite.objects.select_related("created_by", "organization").filter(id=invite_id).first()
+    if invite is None:
+        # Invite can be deleted (cancelled/accepted) before the worker picks up the task.
+        # Treat as terminal no-op instead of retrying.
+        return
+    inviter_name = (
+        invite.created_by.first_name.strip() if invite.created_by and invite.created_by.first_name else "Someone"
     )
-    inviter_name = invite.created_by.first_name if invite.created_by else "someone"
     is_delegation = bool(invite.is_setup_delegation)
     template_name = "delegation_invite" if is_delegation else "invite"
     if is_delegation:

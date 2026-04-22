@@ -440,15 +440,32 @@ class OrganizationInviteViewSet(
         # If a delegation is already in flight for this user, return the existing invite rather
         # than creating a duplicate (and emitting a second email).
         with transaction.atomic():
+            # Serialize delegation decisions per organization so two admins can't concurrently
+            # create competing setup-delegation invites for the same target email.
+            Organization.objects.select_for_update().get(id=self.organization_id)
             locked_user = User.objects.select_for_update().get(pk=user.pk)
 
             if locked_user.onboarding_delegated_to_invite_id and locked_user.onboarding_delegation_accepted_at is None:
                 existing_invite = OrganizationInvite.objects.filter(
-                    pk=locked_user.onboarding_delegated_to_invite_id
+                    pk=locked_user.onboarding_delegated_to_invite_id,
+                    organization_id=self.organization_id,
+                    is_setup_delegation=True,
+                    created_by_id=locked_user.id,
                 ).first()
                 if existing_invite is not None and not existing_invite.is_expired():
                     serializer = OrganizationInviteSerializer(existing_invite, context=self.get_serializer_context())
                     return response.Response(serializer.data, status=status.HTTP_200_OK)
+                # Stale pointer (deleted/expired/wrong org): clear it before creating a fresh invite.
+                locked_user.onboarding_delegated_to_invite = None
+                locked_user.onboarding_delegated_to_organization_id = None
+                locked_user.onboarding_delegation_accepted_at = None
+                locked_user.save(
+                    update_fields=[
+                        "onboarding_delegated_to_invite",
+                        "onboarding_delegated_to_organization_id",
+                        "onboarding_delegation_accepted_at",
+                    ]
+                )
 
             # Generic error on any pending-invite collision: leaks less about org membership
             # than distinct existing_member / existing_invite codes.
@@ -477,16 +494,16 @@ class OrganizationInviteViewSet(
             locked_user.onboarding_delegated_to_organization_id = self.organization_id
             locked_user.onboarding_skipped_at = timezone.now()
             locked_user.onboarding_skipped_reason = "delegated"
+            locked_user.onboarding_delegation_accepted_at = None
             locked_user.save(
                 update_fields=[
                     "onboarding_delegated_to_invite",
                     "onboarding_delegated_to_organization_id",
                     "onboarding_skipped_at",
                     "onboarding_skipped_reason",
+                    "onboarding_delegation_accepted_at",
                 ]
             )
-            invite.emailing_attempt_made = True
-            invite.save(update_fields=["emailing_attempt_made"])
 
             # Queue email after commit so SMTP latency doesn't block the request. Wrap
             # apply_async so a broker outage doesn't surface a 500 for an already-committed
@@ -506,6 +523,7 @@ class OrganizationInviteViewSet(
             def _queue_delegation_email() -> None:
                 try:
                     send_invite.apply_async(kwargs={"invite_id": invite_id})
+                    OrganizationInvite.objects.filter(pk=invite_id).update(emailing_attempt_made=True)
                 except Exception as exc:  # noqa: BLE001 - broker outage must not 500 a committed delegation
                     capture_exception(exc)
 

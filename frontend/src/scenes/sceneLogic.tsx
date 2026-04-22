@@ -1222,7 +1222,11 @@ export const sceneLogic = kea<sceneLogicType>([
                         // If the delegation invite is cancelled or expires, the backend clears
                         // onboarding_delegated_to_invite and the redirect re-fires.
                         !user.onboarding_skipped_at &&
-                        !user.onboarding_delegated_to_invite &&
+                        !(
+                            user.onboarding_delegated_to_invite &&
+                            !user.onboarding_delegation_accepted_at &&
+                            user.onboarding_delegated_to_organization_id === user.organization?.id
+                        ) &&
                         !pathPrefixesOnboardingNotRequiredFor.some((path) =>
                             removeProjectIdIfPresent(location.pathname).startsWith(path)
                         )

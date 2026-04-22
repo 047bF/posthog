@@ -94,6 +94,13 @@ export function OnboardingExitModal(): JSX.Element {
                                 // handler can skip while the user is mid-composition.
                                 isComposingRef.current = (e.nativeEvent as KeyboardEvent).isComposing
                             }}
+                            onKeyUp={(e) => {
+                                // Ensure composition state clears after IME confirmation.
+                                isComposingRef.current = (e.nativeEvent as KeyboardEvent).isComposing
+                            }}
+                            onBlur={() => {
+                                isComposingRef.current = false
+                            }}
                         />
                         {showEmailValidationError ? (
                             <p className="m-0 text-xs text-danger">Enter a valid email address</p>
@@ -115,7 +122,7 @@ export function OnboardingExitModal(): JSX.Element {
                         <div className="flex justify-end gap-2 mt-2">
                             <LemonButton
                                 type="secondary"
-                                onClick={closeExitModal}
+                                onClick={handleClose}
                                 htmlType="button"
                                 disabledReason={isSubmitting ? 'Sending invitation…' : undefined}
                             >
@@ -140,7 +147,7 @@ export function OnboardingExitModal(): JSX.Element {
                         <div className="flex justify-end gap-2">
                             <LemonButton
                                 type="secondary"
-                                onClick={closeExitModal}
+                                onClick={handleClose}
                                 htmlType="button"
                                 disabledReason={isSubmitting ? 'Skipping…' : undefined}
                             >

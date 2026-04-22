@@ -1801,8 +1801,8 @@ export const usersOnboardingSkipCreate = async (
     uuid: string,
     onboardingSkipRequestApi: OnboardingSkipRequestApi,
     options?: RequestInit
-): Promise<void> => {
-    return apiMutator<void>(getUsersOnboardingSkipCreateUrl(uuid), {
+): Promise<UserApi> => {
+    return apiMutator<UserApi>(getUsersOnboardingSkipCreateUrl(uuid), {
         ...options,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...options?.headers },

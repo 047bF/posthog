@@ -10,6 +10,10 @@ class Migration(migrations.Migration):
     blocking CREATE INDEX that can exceed `lock_timeout` during deploy. The FK field is
     declared with `db_index=False`; we add a partial index concurrently here so it can be
     built without holding a long lock on posthog_user.
+
+    We drop/recreate the index name instead of CREATE ... IF NOT EXISTS so interrupted
+    prior concurrent builds (which can leave an invalid index artifact) don't get silently
+    accepted as success.
     """
 
     atomic = False
@@ -19,6 +23,10 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunSQL(
+            sql='DROP INDEX CONCURRENTLY IF EXISTS "posthog_user_onboarding_delegated_to_invite_id_idx"',
+            reverse_sql=migrations.RunSQL.noop,
+        ),
         migrations.RunSQL(
             sql=(
                 "CREATE INDEX CONCURRENTLY IF NOT EXISTS "
