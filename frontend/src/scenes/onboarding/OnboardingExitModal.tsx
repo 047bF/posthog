@@ -1,7 +1,7 @@
 import { useActions, useValues } from 'kea'
 import { useRef } from 'react'
 
-import { LemonButton, LemonDivider, LemonInput, LemonTextArea } from '@posthog/lemon-ui'
+import { LemonButton, LemonDivider, LemonInput, LemonSegmentedButton, LemonTextArea } from '@posthog/lemon-ui'
 
 import { LemonModal } from 'lib/lemon-ui/LemonModal'
 
@@ -40,32 +40,36 @@ export function OnboardingExitModal(): JSX.Element {
         closeExitModal()
     }
 
+    const showEmailValidationError = targetEmail.length > 0 && !canSubmitDelegation
+
     return (
         <LemonModal
             isOpen={isExitModalOpen}
             onClose={handleClose}
             closable={!isSubmitting}
-            title="Not the right person to set this up?"
-            description="Hand off setup to a teammate, or come back to it later."
+            title="Need someone else to finish setup?"
+            description="Invite a teammate to continue, or finish later from settings."
         >
             <div className="flex flex-col gap-4" data-attr="onboarding-exit-modal">
-                <div className="flex gap-2">
-                    <LemonButton
-                        aria-pressed={tab === 'delegate'}
-                        type={tab === 'delegate' ? 'primary' : 'secondary'}
-                        onClick={() => setTab('delegate')}
-                        data-attr="onboarding-exit-tab-delegate"
-                    >
-                        Invite a teammate
-                    </LemonButton>
-                    <LemonButton
-                        aria-pressed={tab === 'later'}
-                        type={tab === 'later' ? 'primary' : 'secondary'}
-                        onClick={() => setTab('later')}
-                        data-attr="onboarding-exit-tab-later"
-                    >
-                        Finish later
-                    </LemonButton>
+                <div className="flex flex-col gap-2">
+                    <p className="m-0 text-xs text-secondary">Choose how to continue</p>
+                    <LemonSegmentedButton
+                        value={tab}
+                        onChange={(newTab) => setTab(newTab)}
+                        fullWidth
+                        options={[
+                            {
+                                value: 'delegate',
+                                label: 'Invite a teammate',
+                                'data-attr': 'onboarding-exit-tab-delegate',
+                            },
+                            {
+                                value: 'later',
+                                label: 'Finish later',
+                                'data-attr': 'onboarding-exit-tab-later',
+                            },
+                        ]}
+                    />
                 </div>
 
                 <LemonDivider />
@@ -81,6 +85,7 @@ export function OnboardingExitModal(): JSX.Element {
                             autoFocus
                             value={targetEmail}
                             onChange={setTargetEmail}
+                            status={showEmailValidationError ? 'danger' : 'default'}
                             placeholder="engineer@example.com"
                             data-attr="onboarding-exit-email-input"
                             onKeyDown={(e) => {
@@ -90,6 +95,9 @@ export function OnboardingExitModal(): JSX.Element {
                                 isComposingRef.current = (e.nativeEvent as KeyboardEvent).isComposing
                             }}
                         />
+                        {showEmailValidationError ? (
+                            <p className="m-0 text-xs text-danger">Enter a valid email address</p>
+                        ) : null}
                         <label className="font-semibold mt-2" htmlFor="onboarding-exit-message">
                             Personal message (optional)
                         </label>
@@ -102,7 +110,7 @@ export function OnboardingExitModal(): JSX.Element {
                             minRows={3}
                         />
                         <p className="text-secondary text-xs m-0 mt-1">
-                            Your teammate will be added as an admin so they can finish setup.
+                            They'll be added as an admin so they can complete onboarding.
                         </p>
                         <div className="flex justify-end gap-2 mt-2">
                             <LemonButton
@@ -128,7 +136,7 @@ export function OnboardingExitModal(): JSX.Element {
 
                 {tab === 'later' && (
                     <form onSubmit={onLaterSubmit} className="flex flex-col gap-3">
-                        <p className="m-0">You can finish setup anytime from your settings.</p>
+                        <p className="m-0">You can finish setup anytime from settings.</p>
                         <div className="flex justify-end gap-2">
                             <LemonButton
                                 type="secondary"
