@@ -48,7 +48,7 @@ export function OnboardingWaitingForTeammate(): JSX.Element {
         setIsTakingOver(true)
         let deletionCommitted = false
         try {
-            // Cancel the delegation invite first — on the backend this fires post_delete
+            // Cancel the delegation invite first — on the backend this fires pre_delete
             // which clears the delegator's onboarding_skipped_at/reason via the signal. If we
             // just navigate to /onboarding, the sceneLogic suppression re-engages on the next
             // render and we bounce back here.

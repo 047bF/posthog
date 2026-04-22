@@ -1669,62 +1669,35 @@ class TestOnboardingDelegationStateTransitionTable(APIBaseTest):
         self.assertEqual(self.user.onboarding_delegated_to_invite_id is not None, has_invite_fk)
         self.assertEqual(self.user.onboarding_delegation_accepted_at is not None, has_accepted_ts)
 
-    def test_state_transition_table(self):
-        cases = [
-            {
-                "name": "delegate_sets_pending_delegation_state",
-                "run": self._run_delegate_only,
-                "expected": {
-                    "reason": "delegated",
-                    "has_skip_ts": True,
-                    "has_invite_fk": True,
-                    "has_accepted_ts": False,
-                },
-            },
-            {
-                "name": "delegate_then_accept_marks_accepted_without_unsuppressing",
-                "run": self._run_delegate_then_accept,
-                "expected": {
-                    "reason": "delegated",
-                    "has_skip_ts": True,
-                    "has_invite_fk": False,
-                    "has_accepted_ts": True,
-                },
-            },
-            {
-                "name": "delegate_then_skip_later_clears_delegation_and_keeps_skip",
-                "run": self._run_delegate_then_skip_later,
-                "expected": {
-                    "reason": "later",
-                    "has_skip_ts": True,
-                    "has_invite_fk": False,
-                    "has_accepted_ts": False,
-                },
-            },
-            {
-                "name": "delegate_then_cancel_unsuppresses_onboarding",
-                "run": self._run_delegate_then_cancel,
-                "expected": {
-                    "reason": None,
-                    "has_skip_ts": False,
-                    "has_invite_fk": False,
-                    "has_accepted_ts": False,
-                },
-            },
+    @parameterized.expand(
+        [
+            (
+                "delegate_sets_pending_delegation_state",
+                "_run_delegate_only",
+                {"reason": "delegated", "has_skip_ts": True, "has_invite_fk": True, "has_accepted_ts": False},
+            ),
+            (
+                "delegate_then_accept_marks_accepted_without_unsuppressing",
+                "_run_delegate_then_accept",
+                {"reason": "delegated", "has_skip_ts": True, "has_invite_fk": False, "has_accepted_ts": True},
+            ),
+            (
+                "delegate_then_skip_later_clears_delegation_and_keeps_skip",
+                "_run_delegate_then_skip_later",
+                {"reason": "later", "has_skip_ts": True, "has_invite_fk": False, "has_accepted_ts": False},
+            ),
+            (
+                "delegate_then_cancel_unsuppresses_onboarding",
+                "_run_delegate_then_cancel",
+                {"reason": None, "has_skip_ts": False, "has_invite_fk": False, "has_accepted_ts": False},
+            ),
         ]
-
-        for case in cases:
-            with self.subTest(case=case["name"]):
-                self.user.onboarding_skipped_at = None
-                self.user.onboarding_skipped_reason = None
-                self.user.onboarding_delegated_to_invite = None
-                self.user.onboarding_delegated_to_organization_id = None
-                self.user.onboarding_delegation_accepted_at = None
-                self.user.save()
-                OrganizationInvite.objects.filter(created_by=self.user, is_setup_delegation=True).delete()
-
-                case["run"]()
-                self._assert_user_state(**case["expected"])
+    )
+    def test_state_transition(self, _name: str, run_method_name: str, expected: dict) -> None:
+        """Each parametrised case runs in its own Django test transaction, so DB state is
+        reset between cases by the test runner — no manual reset is needed."""
+        getattr(self, run_method_name)()
+        self._assert_user_state(**expected)
 
     def _run_delegate_only(self) -> None:
         self._last_delegate_email = f"engineer+{random.randint(100000, 999999)}@example.com"
