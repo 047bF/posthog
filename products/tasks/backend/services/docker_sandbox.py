@@ -57,6 +57,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_IMAGE_NAME = "posthog-sandbox-base"
 NOTEBOOK_IMAGE_NAME = "posthog-sandbox-notebook"
+PI_IMAGE_NAME = "posthog-sandbox-pi"
 AGENT_SERVER_PORT = 47821  # Arbitrary high port unlikely to conflict with dev servers
 
 
@@ -143,7 +144,7 @@ class DockerSandbox(SandboxBase):
         return agent_path, shared_path, git_path
 
     @staticmethod
-    def _build_image_if_needed(image_name: str, dockerfile_path: str) -> None:
+    def _build_image_if_needed(image_name: str, dockerfile_path: str, build_args: dict[str, str] | None = None) -> None:
         """Build a sandbox image if it doesn't exist."""
         result = DockerSandbox._run(["docker", "images", "-q", image_name])
         if result.stdout.strip():
@@ -158,6 +159,10 @@ class DockerSandbox(SandboxBase):
         # hogli build:skills.
         LocalSkillsCache().ensure_built()
 
+        build_arg_flags: list[str] = []
+        for name, value in (build_args or {}).items():
+            build_arg_flags.extend(["--build-arg", f"{name}={value}"])
+
         DockerSandbox._run(
             [
                 "docker",
@@ -166,6 +171,7 @@ class DockerSandbox(SandboxBase):
                 dockerfile_path,
                 "-t",
                 image_name,
+                *build_arg_flags,
                 str(settings.BASE_DIR),
             ],
             check=True,
@@ -218,6 +224,17 @@ class DockerSandbox(SandboxBase):
             )
             DockerSandbox._build_image_if_needed(NOTEBOOK_IMAGE_NAME, dockerfile_path)
             return NOTEBOOK_IMAGE_NAME
+
+        if template == SandboxTemplate.PI_BASE:
+            # The pi image is layered on top of the base via BASE_IMAGE arg. Build
+            # the base first (honouring LOCAL_POSTHOG_CODE_MONOREPO_ROOT), then
+            # build pi on top of that local tag.
+            base_image = DockerSandbox._ensure_image_exists(SandboxTemplate.DEFAULT_BASE)
+            dockerfile_path = os.path.join(
+                settings.BASE_DIR, "products/tasks/backend/sandbox/images/Dockerfile.sandbox-pi"
+            )
+            DockerSandbox._build_image_if_needed(PI_IMAGE_NAME, dockerfile_path, build_args={"BASE_IMAGE": base_image})
+            return PI_IMAGE_NAME
 
         dockerfile_path = os.path.join(
             settings.BASE_DIR, "products/tasks/backend/sandbox/images/Dockerfile.sandbox-base"
