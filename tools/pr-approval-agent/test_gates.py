@@ -2,7 +2,7 @@
 
 import pytest
 
-from gates import detect_deny_categories
+from gates import detect_deny_categories, detect_noop_migration_files, migration_bookkeeping_files_for
 
 # ── False positives that should NOT trigger ──────────────────────
 
@@ -139,3 +139,127 @@ def test_no_false_positive(files: list[str], subject: str) -> None:
 def test_true_positive(files: list[str], subject: str, expected_category: str) -> None:
     result = detect_deny_categories(files, subject)
     assert expected_category in result, f"Expected '{expected_category}' in {result}"
+
+
+def test_detect_noop_choice_migration() -> None:
+    migration_content = """
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    dependencies = [("posthog", "1116_previous")]
+
+    operations = [
+        migrations.AlterField(
+            model_name="integration",
+            name="kind",
+            field=models.CharField(
+                choices=[
+                    ("slack", "Slack"),
+                    ("postgresql", "Postgresql"),
+                ],
+                max_length=32,
+            ),
+        ),
+    ]
+"""
+    base_model_content = """
+from django.db import models
+
+
+class Integration(models.Model):
+    class IntegrationKind(models.TextChoices):
+        SLACK = "slack"
+
+    kind = field_access_control(
+        models.CharField(max_length=32, choices=IntegrationKind.choices),
+        "project",
+        "admin",
+    )
+"""
+    migration_files = {"posthog/migrations/1117_alter_integration_kind.py": migration_content}
+    base_files = {"posthog/models/integration.py": base_model_content}
+
+    assert detect_noop_migration_files(migration_files, base_files) == {
+        "posthog/migrations/1117_alter_integration_kind.py"
+    }
+
+
+def test_changed_db_field_attribute_is_not_noop_migration() -> None:
+    migration_content = """
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    dependencies = [("posthog", "1116_previous")]
+
+    operations = [
+        migrations.AlterField(
+            model_name="integration",
+            name="kind",
+            field=models.CharField(
+                choices=[
+                    ("slack", "Slack"),
+                    ("postgresql", "Postgresql"),
+                ],
+                max_length=64,
+            ),
+        ),
+    ]
+"""
+    base_model_content = """
+from django.db import models
+
+
+class Integration(models.Model):
+    kind = models.CharField(max_length=32, choices=[("slack", "Slack")])
+"""
+    migration_files = {"posthog/migrations/1117_alter_integration_kind.py": migration_content}
+    base_files = {"posthog/models/integration.py": base_model_content}
+
+    assert detect_noop_migration_files(migration_files, base_files) == set()
+
+
+def test_noop_migration_and_max_migration_can_be_ignored_for_deny_list() -> None:
+    noop_files = {"posthog/migrations/1117_alter_integration_kind.py"}
+    ignored_files = noop_files | migration_bookkeeping_files_for(noop_files)
+    files = [
+        "posthog/migrations/1117_alter_integration_kind.py",
+        "posthog/migrations/max_migration.txt",
+    ]
+
+    assert detect_deny_categories(files, "feat: add postgresql integration", ignored_files=ignored_files) == []
+
+
+def test_real_migration_still_matches_deny_list() -> None:
+    migration_content = """
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    dependencies = [("posthog", "1116_previous")]
+
+    operations = [
+        migrations.AddField(
+            model_name="integration",
+            name="new_field",
+            field=models.CharField(max_length=32, null=True),
+        ),
+    ]
+"""
+    migration_files = {"posthog/migrations/1117_integration_new_field.py": migration_content}
+
+    assert detect_noop_migration_files(migration_files, {}) == set()
+    assert detect_deny_categories(list(migration_files), "feat: add integration field") == ["migrations"]
+
+
+def test_mixed_noop_and_real_migration_still_matches_deny_list() -> None:
+    noop_files = {"posthog/migrations/1117_alter_integration_kind.py"}
+    ignored_files = noop_files | migration_bookkeeping_files_for(noop_files)
+    files = [
+        "posthog/migrations/1117_alter_integration_kind.py",
+        "posthog/migrations/1118_add_column.py",
+        "posthog/migrations/max_migration.txt",
+    ]
+
+    assert detect_deny_categories(files, "feat: add integration field", ignored_files=ignored_files) == ["migrations"]

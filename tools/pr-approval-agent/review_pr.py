@@ -23,6 +23,7 @@ Requires `gh` CLI authenticated and ANTHROPIC_API_KEY in env.
 import json
 import time
 import argparse
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,10 +33,12 @@ from gates import (
     assign_tier,
     classify_files,
     detect_deny_categories,
+    detect_noop_migration_files,
     detect_ownership,
     has_ci_workflow_changes,
     has_dependency_changes,
     is_allow_listed_only,
+    migration_bookkeeping_files_for,
     parse_codeowners_soft,
     parse_conventional_commit,
     scope_breadth,
@@ -166,7 +169,12 @@ class Pipeline:
         top_dirs = file_info["top_dirs"]
         breadth = scope_breadth(top_dirs)
         cc = parse_conventional_commit(pr.title)
-        deny = detect_deny_categories(file_paths, pr.title)
+        noop_migration_files = detect_noop_migration_files(
+            migration_file_contents=self._read_git_file_contents(pr.head_sha, self._migration_file_paths(file_paths)),
+            base_file_contents=self._read_git_file_contents(pr.base_sha, self._changed_python_file_paths(file_paths)),
+        )
+        ignored_deny_files = noop_migration_files | migration_bookkeeping_files_for(noop_migration_files)
+        deny = detect_deny_categories(file_paths, pr.title, ignored_files=ignored_deny_files)
         allow_only = is_allow_listed_only(file_paths)
         is_test = test_only(categories)
         ownership_rules = parse_codeowners_soft(CODEOWNERS_SOFT)
@@ -198,12 +206,38 @@ class Pipeline:
             "commit_scope": cc["scope"],
             "categories": categories,
             "deny_categories": deny,
+            "noop_migration_files": sorted(noop_migration_files),
+            "ignored_deny_files": sorted(ignored_deny_files),
             "allow_listed_only": allow_only,
             "is_test_only": is_test,
             "has_dep_changes": has_dependency_changes(file_paths),
             "has_ci_changes": has_ci_workflow_changes(file_paths),
             "ownership": ownership,
         }
+
+    def _migration_file_paths(self, file_paths: list[str]) -> list[str]:
+        return [p for p in file_paths if "/migrations/" in p.lower() and p.lower().endswith(".py")]
+
+    def _changed_python_file_paths(self, file_paths: list[str]) -> list[str]:
+        return [
+            p for p in file_paths if p.lower().endswith(".py") and not p.lower().endswith("/__init__.py")
+        ]
+
+    def _read_git_file_contents(self, rev: str, file_paths: list[str]) -> dict[str, str]:
+        contents: dict[str, str] = {}
+
+        for path in file_paths:
+            result = subprocess.run(
+                ["git", "show", f"{rev}:{path}"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                contents[path] = result.stdout
+
+        return contents
 
     def _run_gates(self) -> None:
         print(_bold("Gates"))
@@ -413,6 +447,7 @@ class Pipeline:
                 "breadth": self.classification["breadth"],
                 "commit_type": self.classification.get("commit_type"),
                 "deny_categories": self.classification.get("deny_categories", []),
+                "noop_migration_files": self.classification.get("noop_migration_files", []),
                 "ownership": self.classification.get("ownership", {}),
             },
             "gates": [
