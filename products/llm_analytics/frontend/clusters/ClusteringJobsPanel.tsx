@@ -123,7 +123,7 @@ export function ClusteringJobsPanel(): JSX.Element {
             onClose={closeJobsPanel}
             title="Clustering jobs"
             description="Define independent clustering configurations for different subpopulations."
-            width={600}
+            maxWidth="48rem"
         >
             {editingJob ? (
                 <JobEditor
