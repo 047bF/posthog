@@ -23,6 +23,15 @@ if (request.method != 'POST') {
 let body := request.body
 
 if (not inputs.bypass_signature_check) {
+  if (empty(inputs.signing_secret)) {
+    return {
+      'httpResponse': {
+        'status': 400,
+        'body': 'Signing secret not configured',
+      }
+    }
+  }
+
   let rawBody := request.stringBody
   let slackSignature := request.headers['x-slack-signature']
   let slackTimestamp := request.headers['x-slack-request-timestamp']

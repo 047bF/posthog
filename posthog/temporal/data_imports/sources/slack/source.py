@@ -19,6 +19,7 @@ from posthog.temporal.data_imports.sources.common.base import (
     FieldType,
     ResumableSource,
     WebhookCreationResult,
+    WebhookDeletionResult,
     WebhookSource,
 )
 from posthog.temporal.data_imports.sources.common.mixins import OAuthMixin
@@ -96,6 +97,12 @@ class SlackSource(ResumableSource[SlackSourceConfig, SlackResumeConfig], Webhook
             success=False,
             error="Slack does not support automatic webhook creation. Please follow the manual setup instructions.",
         )
+
+    def delete_webhook(self, config: SlackSourceConfig, webhook_url: str, team_id: int) -> WebhookDeletionResult:
+        # Slack does not expose an API to remove an Events API Request URL — the user has to
+        # toggle it off manually in the app settings. Returning success lets the HogFunction
+        # be cleaned up without showing the user a misleading "deletion failed" error.
+        return WebhookDeletionResult(success=True)
 
     @property
     def get_source_config(self) -> SourceConfig:
