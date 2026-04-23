@@ -9,6 +9,7 @@ import { userLogic } from 'scenes/userLogic'
 
 import { invitesDelegateCreate, usersOnboardingSkipCreate, usersRetrieve } from '~/generated/core/api'
 import { OnboardingSkipRequestReasonEnumApi } from '~/generated/core/api.schemas'
+import { UserType } from '~/types'
 
 import type { onboardingExitLogicType } from './onboardingExitLogicType'
 import { onboardingLogic } from './onboardingLogic'
@@ -140,7 +141,7 @@ export const onboardingExitLogic = kea<onboardingExitLogicType>([
                 if (userUuid) {
                     try {
                         const freshUser = await usersRetrieve(userUuid)
-                        actions.loadUserSuccess(freshUser)
+                        actions.loadUserSuccess(freshUser as unknown as UserType)
                     } catch {
                         // Fall back to a plain loadUser() for retry; sceneLogic will pick up the
                         // delegation state on the next render.
@@ -182,7 +183,7 @@ export const onboardingExitLogic = kea<onboardingExitLogicType>([
                 })
                 // The skip endpoint returns the updated user — seed state directly so sceneLogic
                 // sees the fresh suppression flags before the navigation evaluates the redirect.
-                actions.loadUserSuccess(updatedUser)
+                actions.loadUserSuccess(updatedUser as unknown as UserType)
                 actions.closeExitModal()
                 router.actions.push(urls.default())
             } catch (error: any) {

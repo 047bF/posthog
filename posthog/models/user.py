@@ -225,7 +225,7 @@ class User(AbstractUser, UUIDTClassicModel, ModelActivityMixin):  # type: ignore
         max_length=32, null=True, blank=True, choices=ONBOARDING_SKIPPED_REASONS
     )
     # Index is created out-of-band via `CREATE INDEX CONCURRENTLY` in a follow-up migration —
-    # see 1113_onboarding_delegated_to_invite_index. `db_index=False` keeps Django's base AddField
+    # see 1118_onboarding_delegated_to_invite_index. `db_index=False` keeps Django's base AddField
     # from emitting a blocking CREATE INDEX on posthog_user during deploy.
     onboarding_delegated_to_invite = models.ForeignKey(
         "posthog.OrganizationInvite",

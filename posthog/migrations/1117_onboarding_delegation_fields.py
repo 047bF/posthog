@@ -38,7 +38,7 @@ class Migration(migrations.Migration):
             ),
         ),
         # db_index=False: Django's default would emit a blocking CREATE INDEX on posthog_user
-        # during deploy. The index is added out-of-band in 1113 via CREATE INDEX CONCURRENTLY.
+        # during deploy. The index is added out-of-band in 1118 via CREATE INDEX CONCURRENTLY.
         migrations.AddField(
             model_name="user",
             name="onboarding_delegated_to_invite",
