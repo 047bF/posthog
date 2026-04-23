@@ -33,12 +33,10 @@ from gates import (
     assign_tier,
     classify_files,
     detect_deny_categories,
-    detect_noop_migration_files,
     detect_ownership,
     has_ci_workflow_changes,
     has_dependency_changes,
     is_allow_listed_only,
-    migration_bookkeeping_files_for,
     parse_codeowners_soft,
     parse_conventional_commit,
     scope_breadth,
@@ -46,6 +44,7 @@ from gates import (
     test_only,
 )
 from github import PRData, check_team_membership, fetch_pr
+from noop_migrations import detect_noop_migration_files, migration_bookkeeping_files_for
 from reviewer import Reviewer
 
 try:
@@ -219,9 +218,7 @@ class Pipeline:
         return [p for p in file_paths if "/migrations/" in p.lower() and p.lower().endswith(".py")]
 
     def _changed_python_file_paths(self, file_paths: list[str]) -> list[str]:
-        return [
-            p for p in file_paths if p.lower().endswith(".py") and not p.lower().endswith("/__init__.py")
-        ]
+        return [p for p in file_paths if p.lower().endswith(".py") and not p.lower().endswith("/__init__.py")]
 
     def _read_git_file_contents(self, rev: str, file_paths: list[str]) -> dict[str, str]:
         contents: dict[str, str] = {}

@@ -2,7 +2,8 @@
 
 import pytest
 
-from gates import detect_deny_categories, detect_noop_migration_files, migration_bookkeeping_files_for
+from gates import detect_deny_categories
+from noop_migrations import detect_noop_migration_files, migration_bookkeeping_files_for
 
 # ── False positives that should NOT trigger ──────────────────────
 
