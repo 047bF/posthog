@@ -232,8 +232,12 @@ def test_noop_migration_and_max_migration_can_be_ignored_for_deny_list() -> None
     assert detect_deny_categories(files, "feat: add postgresql integration", ignored_files=ignored_files) == []
 
 
-def test_real_migration_still_matches_deny_list() -> None:
-    migration_content = """
+@pytest.mark.parametrize(
+    "migration_path, migration_content, subject",
+    [
+        pytest.param(
+            "posthog/migrations/1117_integration_new_field.py",
+            """
 from django.db import migrations, models
 
 
@@ -247,11 +251,156 @@ class Migration(migrations.Migration):
             field=models.CharField(max_length=32, null=True),
         ),
     ]
-"""
-    migration_files = {"posthog/migrations/1117_integration_new_field.py": migration_content}
+""",
+            "feat: add integration field",
+            id="add-field",
+        ),
+        pytest.param(
+            "posthog/migrations/1117_create_team_preferences.py",
+            """
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    dependencies = [("posthog", "1116_previous")]
+
+    operations = [
+        migrations.CreateModel(
+            name="TeamPreferences",
+            fields=[
+                ("id", models.AutoField(primary_key=True)),
+                ("theme", models.CharField(max_length=16)),
+            ],
+        ),
+    ]
+""",
+            "feat: add team preferences model",
+            id="create-model",
+        ),
+        pytest.param(
+            "posthog/migrations/1117_remove_integration_legacy_flag.py",
+            """
+from django.db import migrations
+
+
+class Migration(migrations.Migration):
+    dependencies = [("posthog", "1116_previous")]
+
+    operations = [
+        migrations.RemoveField(
+            model_name="integration",
+            name="legacy_flag",
+        ),
+    ]
+""",
+            "chore: drop integration.legacy_flag",
+            id="remove-field",
+        ),
+        pytest.param(
+            "posthog/migrations/1117_rename_integration_kind_column.py",
+            """
+from django.db import migrations
+
+
+class Migration(migrations.Migration):
+    dependencies = [("posthog", "1116_previous")]
+
+    operations = [
+        migrations.RenameField(
+            model_name="integration",
+            old_name="kind",
+            new_name="kind_type",
+        ),
+    ]
+""",
+            "refactor: rename integration.kind to kind_type",
+            id="rename-field",
+        ),
+        pytest.param(
+            "posthog/migrations/1117_add_integration_team_kind_index.py",
+            """
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    dependencies = [("posthog", "1116_previous")]
+
+    operations = [
+        migrations.AddIndex(
+            model_name="integration",
+            index=models.Index(fields=["team_id", "kind"], name="integration_team_kind_idx"),
+        ),
+    ]
+""",
+            "perf: add index on integration(team_id, kind)",
+            id="add-index",
+        ),
+        pytest.param(
+            "posthog/migrations/1117_add_integration_kind_unique.py",
+            """
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    dependencies = [("posthog", "1116_previous")]
+
+    operations = [
+        migrations.AddConstraint(
+            model_name="integration",
+            constraint=models.UniqueConstraint(fields=["team_id", "kind"], name="uniq_integration_team_kind"),
+        ),
+    ]
+""",
+            "feat: enforce unique (team, kind) on integration",
+            id="add-constraint",
+        ),
+        pytest.param(
+            "posthog/migrations/1117_backfill_integration_kind.py",
+            """
+from django.db import migrations
+
+
+def forwards(apps, schema_editor):
+    Integration = apps.get_model("posthog", "Integration")
+    Integration.objects.filter(kind="slack_v1").update(kind="slack")
+
+
+class Migration(migrations.Migration):
+    dependencies = [("posthog", "1116_previous")]
+
+    operations = [
+        migrations.RunPython(forwards, migrations.RunPython.noop),
+    ]
+""",
+            "chore: backfill integration.kind values",
+            id="run-python-backfill",
+        ),
+        pytest.param(
+            "posthog/migrations/1117_drop_legacy_view.py",
+            """
+from django.db import migrations
+
+
+class Migration(migrations.Migration):
+    dependencies = [("posthog", "1116_previous")]
+
+    operations = [
+        migrations.RunSQL(
+            sql="DROP VIEW IF EXISTS legacy_integration_summary;",
+            reverse_sql=migrations.RunSQL.noop,
+        ),
+    ]
+""",
+            "chore: drop legacy_integration_summary view",
+            id="run-sql",
+        ),
+    ],
+)
+def test_real_migration_still_matches_deny_list(migration_path: str, migration_content: str, subject: str) -> None:
+    migration_files = {migration_path: migration_content}
 
     assert detect_noop_migration_files(migration_files, {}) == set()
-    assert detect_deny_categories(list(migration_files), "feat: add integration field") == ["migrations"]
+    assert detect_deny_categories(list(migration_files), subject) == ["migrations"]
 
 
 def test_mixed_noop_and_real_migration_still_matches_deny_list() -> None:
