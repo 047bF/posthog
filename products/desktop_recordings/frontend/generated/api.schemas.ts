@@ -68,7 +68,7 @@ export interface TranscriptSegmentApi {
 /**
  * Serializer for extracted tasks
  */
-export interface TaskApi {
+export interface DesktopRecordingExtractedTaskApi {
     title: string
     description?: string
     /** @nullable */
@@ -124,7 +124,7 @@ export interface DesktopRecordingApi {
     /** @nullable */
     summary?: string | null
     /** AI-extracted tasks from transcript */
-    extracted_tasks?: TaskApi[]
+    extracted_tasks?: DesktopRecordingExtractedTaskApi[]
     /** @nullable */
     tasks_generated_at?: string | null
     /** @nullable */
@@ -229,7 +229,7 @@ export interface CreateRecordingResponseApi {
     /** @nullable */
     summary?: string | null
     /** AI-extracted tasks from transcript */
-    extracted_tasks?: TaskApi[]
+    extracted_tasks?: DesktopRecordingExtractedTaskApi[]
     /** @nullable */
     tasks_generated_at?: string | null
     /** @nullable */
@@ -292,7 +292,7 @@ export interface PatchedDesktopRecordingApi {
     /** @nullable */
     summary?: string | null
     /** AI-extracted tasks from transcript */
-    extracted_tasks?: TaskApi[]
+    extracted_tasks?: DesktopRecordingExtractedTaskApi[]
     /** @nullable */
     tasks_generated_at?: string | null
     /** @nullable */

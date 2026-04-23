@@ -142,6 +142,32 @@ export interface SandboxEnvironmentApi {
     readonly updated_at: string
 }
 
+export interface PatchedSandboxEnvironmentApi {
+    readonly id?: string
+    /** @maxLength 255 */
+    name?: string
+    network_access_level?: NetworkAccessLevelEnumApi
+    /** List of allowed domains for custom network access */
+    allowed_domains?: string[]
+    /** Whether to include default trusted domains (GitHub, npm, PyPI) */
+    include_default_domains?: boolean
+    /** List of repositories this environment applies to (format: org/repo) */
+    repositories?: string[]
+    /** Encrypted environment variables (write-only, never returned in responses) */
+    environment_variables?: unknown
+    /** Whether this environment has any environment variables set */
+    readonly has_environment_variables?: boolean
+    /** If true, only the creator can see this environment. Otherwise visible to whole team. */
+    private?: boolean
+    /** If true, this environment is for internal use (e.g. signals pipeline) and should not be exposed to end users. */
+    readonly internal?: boolean
+    /** Computed domain allowlist based on network_access_level and allowed_domains */
+    readonly effective_domains?: readonly string[]
+    readonly created_by?: UserBasicApi
+    readonly created_at?: string
+    readonly updated_at?: string
+}
+
 export interface TaskAutomationApi {
     readonly id: string
     /** @maxLength 255 */
@@ -184,30 +210,38 @@ export interface PaginatedTaskAutomationListApi {
     results: TaskAutomationApi[]
 }
 
-/**
- * Serializer for extracted tasks
- */
-export interface TaskApi {
-    title: string
-    description?: string
+export interface PatchedTaskAutomationApi {
+    readonly id?: string
+    /** @maxLength 255 */
+    name?: string
+    prompt?: string
+    /** @maxLength 255 */
+    repository?: string
     /** @nullable */
-    assignee?: string | null
+    github_integration?: number | null
+    /** @maxLength 100 */
+    cron_expression?: string
+    /** @maxLength 128 */
+    timezone?: string
+    /**
+     * @maxLength 255
+     * @nullable
+     */
+    template_id?: string | null
+    enabled?: boolean
+    /** @nullable */
+    readonly last_run_at?: string | null
+    /** @nullable */
+    readonly last_run_status?: string | null
+    /** @nullable */
+    readonly last_task_id?: string | null
+    /** @nullable */
+    readonly last_task_run_id?: string | null
+    /** @nullable */
+    readonly last_error?: string | null
+    readonly created_at?: string
+    readonly updated_at?: string
 }
-
-export interface PaginatedTaskListApi {
-    count: number
-    /** @nullable */
-    next?: string | null
-    /** @nullable */
-    previous?: string | null
-    results: TaskApi[]
-}
-
-/**
- * Latest run details for this task
- * @nullable
- */
-export type PatchedTaskApiLatestRun = { [key: string]: unknown } | null | null
 
 /**
  * * `error_tracking` - Error Tracking
@@ -241,6 +275,69 @@ export type SignalReportTaskRelationshipEnumApi =
 export const SignalReportTaskRelationshipEnumApi = {
     Implementation: 'implementation',
 } as const
+
+/**
+ * Latest run details for this task
+ * @nullable
+ */
+export type TaskApiLatestRun = { [key: string]: unknown } | null | null
+
+export interface TaskApi {
+    readonly id: string
+    /** @nullable */
+    readonly task_number: number | null
+    readonly slug: string
+    /** @maxLength 255 */
+    title?: string
+    title_manually_set?: boolean
+    description?: string
+    origin_product?: OriginProductEnumApi
+    /**
+     * @maxLength 255
+     * @nullable
+     */
+    repository?: string | null
+    /**
+     * GitHub integration for this task
+     * @nullable
+     */
+    github_integration?: number | null
+    /** @nullable */
+    signal_report?: string | null
+    signal_report_task_relationship?: SignalReportTaskRelationshipEnumApi
+    /** JSON schema for the task. This is used to validate the output of the task. */
+    json_schema?: unknown | null
+    /** If true, this task is for internal use and should not be exposed to end users. */
+    internal?: boolean
+    /**
+     * Latest run details for this task
+     * @nullable
+     */
+    readonly latest_run: TaskApiLatestRun
+    readonly created_at: string
+    readonly updated_at: string
+    readonly created_by: UserBasicApi
+    /**
+     * Custom prompt for CI fixes. If blank, a default prompt will be used.
+     * @nullable
+     */
+    ci_prompt?: string | null
+}
+
+export interface PaginatedTaskListApi {
+    count: number
+    /** @nullable */
+    next?: string | null
+    /** @nullable */
+    previous?: string | null
+    results: TaskApi[]
+}
+
+/**
+ * Latest run details for this task
+ * @nullable
+ */
+export type PatchedTaskApiLatestRun = { [key: string]: unknown } | null | null
 
 export interface PatchedTaskApi {
     readonly id?: string

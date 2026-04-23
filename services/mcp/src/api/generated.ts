@@ -8888,7 +8888,7 @@ export namespace Schemas {
     /**
      * Serializer for extracted tasks
      */
-    export interface Task {
+    export interface DesktopRecordingExtractedTask {
       title: string;
       description?: string;
       /** @nullable */
@@ -8947,7 +8947,7 @@ export namespace Schemas {
       /** @nullable */
       summary?: string | null;
       /** AI-extracted tasks from transcript */
-      extracted_tasks?: Task[];
+      extracted_tasks?: DesktopRecordingExtractedTask[];
       /** @nullable */
       tasks_generated_at?: string | null;
       /** @nullable */
@@ -13607,7 +13607,7 @@ export namespace Schemas {
       /** @nullable */
       summary?: string | null;
       /** AI-extracted tasks from transcript */
-      extracted_tasks?: Task[];
+      extracted_tasks?: DesktopRecordingExtractedTask[];
       /** @nullable */
       tasks_generated_at?: string | null;
       /** @nullable */
@@ -23976,6 +23976,64 @@ export namespace Schemas {
       results: TaskAutomation[];
     }
 
+    /**
+     * * `implementation` - Implementation
+     */
+    export type SignalReportTaskRelationshipEnum = typeof SignalReportTaskRelationshipEnum[keyof typeof SignalReportTaskRelationshipEnum];
+
+
+    export const SignalReportTaskRelationshipEnum = {
+      Implementation: 'implementation',
+    } as const;
+
+    /**
+     * Latest run details for this task
+     * @nullable
+     */
+    export type TaskLatestRun = {[key: string]: unknown} | null | null;
+
+    export interface Task {
+      readonly id: string;
+      /** @nullable */
+      readonly task_number: number | null;
+      readonly slug: string;
+      /** @maxLength 255 */
+      title?: string;
+      title_manually_set?: boolean;
+      description?: string;
+      origin_product?: OriginProductEnum;
+      /**
+       * @maxLength 255
+       * @nullable
+       */
+      repository?: string | null;
+      /**
+       * GitHub integration for this task
+       * @nullable
+       */
+      github_integration?: number | null;
+      /** @nullable */
+      signal_report?: string | null;
+      signal_report_task_relationship?: SignalReportTaskRelationshipEnum;
+      /** JSON schema for the task. This is used to validate the output of the task. */
+      json_schema?: unknown | null;
+      /** If true, this task is for internal use and should not be exposed to end users. */
+      internal?: boolean;
+      /**
+       * Latest run details for this task
+       * @nullable
+       */
+      readonly latest_run: TaskLatestRun;
+      readonly created_at: string;
+      readonly updated_at: string;
+      readonly created_by: UserBasic;
+      /**
+       * Custom prompt for CI fixes. If blank, a default prompt will be used.
+       * @nullable
+       */
+      ci_prompt?: string | null;
+    }
+
     export interface PaginatedTaskList {
       count: number;
       /** @nullable */
@@ -25525,7 +25583,7 @@ export namespace Schemas {
       /** @nullable */
       summary?: string | null;
       /** AI-extracted tasks from transcript */
-      extracted_tasks?: Task[];
+      extracted_tasks?: DesktopRecordingExtractedTask[];
       /** @nullable */
       tasks_generated_at?: string | null;
       /** @nullable */
@@ -29150,16 +29208,6 @@ export namespace Schemas {
      * @nullable
      */
     export type PatchedTaskLatestRun = {[key: string]: unknown} | null | null;
-
-    /**
-     * * `implementation` - Implementation
-     */
-    export type SignalReportTaskRelationshipEnum = typeof SignalReportTaskRelationshipEnum[keyof typeof SignalReportTaskRelationshipEnum];
-
-
-    export const SignalReportTaskRelationshipEnum = {
-      Implementation: 'implementation',
-    } as const;
 
     export interface PatchedTask {
       readonly id?: string;
