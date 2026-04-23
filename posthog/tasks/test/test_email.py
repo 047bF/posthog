@@ -108,7 +108,7 @@ class TestEmail(APIBaseTest, ClickhouseTestMixin):
         assert len(mocked_email_messages) == 1
         # Subject is asked-to-set-up phrasing, not the generic invite subject
         subject = MockEmailMessage.call_args.kwargs["subject"]
-        assert "set up PostHog" in subject
+        assert "setting up PostHog" in subject
         assert "Admin" in subject
         assert "invited you to join" not in subject
         # Routed to the delegation template

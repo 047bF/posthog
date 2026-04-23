@@ -1617,6 +1617,7 @@ class TestOnboardingSkipAPI(APIBaseTest):
 class TestDelegationCancellationUnsuppressesRedirect(APIBaseTest):
     def setUp(self):
         super().setUp()
+        set_instance_setting("EMAIL_HOST", "localhost")
         self.organization_membership.level = OrganizationMembership.Level.ADMIN
         self.organization_membership.save()
 

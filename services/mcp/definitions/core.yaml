@@ -791,6 +791,7 @@ tools:
         enabled: false
     users-onboarding-skip-create:
         operation: users_onboarding_skip_create
+        enabled: false
     legal-documents-download-retrieve:
         operation: legal_documents_download_retrieve
         enabled: false
