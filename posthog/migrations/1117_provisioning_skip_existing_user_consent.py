@@ -4,15 +4,17 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('posthog', '1116_datadeletionrequest_hogql_predicate'),
+        ("posthog", "1116_datadeletionrequest_hogql_predicate"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='oauthapplication',
-            name='provisioning_skip_existing_user_consent',
-            field=models.BooleanField(default=False, help_text='Skip user consent when linking existing accounts. Only enable for fully trusted partners.'),
+            model_name="oauthapplication",
+            name="provisioning_skip_existing_user_consent",
+            field=models.BooleanField(
+                default=False,
+                help_text="Skip user consent when linking existing accounts. Only enable for fully trusted partners.",
+            ),
         ),
     ]
