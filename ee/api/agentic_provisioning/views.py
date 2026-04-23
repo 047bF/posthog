@@ -1113,7 +1113,13 @@ def _try_activate_billing_with_spt(request: Request, team: Team, user: User) -> 
 
 
 def _create_provisioned_pat(user: User, team: Team) -> str | None:
-    """Create a Personal API Key for a provisioned user and return the raw key value."""
+    """Create a Personal API Key for a provisioned user and return the raw key value.
+
+    Granted all scopes: the user just self-provisioned a brand-new account via
+    a partner flow, owns everything in it, and has no in-product mechanism to
+    upgrade scopes later. A narrow default would produce silent 403s in
+    downstream tooling (e.g. the wizard CI install flow).
+    """
     try:
         api_key_value = generate_random_token_personal()
         label = f"{STRIPE_PROVISIONED_PAT_LABEL_PREFIX} - {team.name}"[:40]
@@ -1123,7 +1129,7 @@ def _create_provisioned_pat(user: User, team: Team) -> str | None:
             label=label,
             secure_value=hash_key_value(api_key_value),
             mask_value=mask_key_value(api_key_value),
-            scopes=[],
+            scopes=["*"],
         )
 
         return api_key_value

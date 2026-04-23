@@ -129,6 +129,17 @@ class TestProvisioningResources(StripeProvisioningTestBase):
         assert pat is not None
         assert pat.label.startswith("Stripe Projects")
 
+    def test_create_resource_pat_has_all_scopes(self):
+        token = self._get_bearer_token()
+        self._post_signed_with_bearer(
+            "/api/agentic/provisioning/resources",
+            data={"service_id": "analytics"},
+            token=token,
+        )
+        pat = PersonalAPIKey.objects.filter(user=self.user).order_by("-created_at").first()
+        assert pat is not None
+        assert pat.scopes == ["*"]
+
     def test_create_resource_does_not_delete_existing_pats(self):
         token = self._get_bearer_token()
         self._post_signed_with_bearer(
