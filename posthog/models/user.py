@@ -99,6 +99,26 @@ class UserManager(BaseUserManager):
         user.save()
         return user
 
+    def create_superuser(self, **kwargs):
+        """Create and save a SuperUser with the given email and password."""
+
+        def _get_first_name(message: str) -> str:
+            name = input(message).strip()
+            if name:
+                return name
+            raise ValueError("Superuser must have a first name")
+
+        def _get_organization(message: str) -> str:
+            org = input(message).strip()
+            if org:
+                return org
+            raise ValueError("Superuser must have an organization name")
+
+        first_name: str = _get_first_name("Enter superuser first name: ")
+        organization: str = _get_organization("Enter superuser organization: ")
+        is_staff: bool = kwargs.pop("is_staff", True)
+        return self.bootstrap(organization_name=organization, first_name=first_name, is_staff=is_staff, **kwargs)
+
     def bootstrap(
         self,
         organization_name: str,
