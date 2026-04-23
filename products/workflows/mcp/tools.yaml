@@ -98,10 +98,9 @@ tools:
             idempotent: true
         title: Get workflow logs
         description: >
-            Retrieve execution logs for a specific workflow by ID. Returns log entries with timestamp,
-            level (DEBUG, LOG, INFO, WARN, ERROR), and message. Use to debug why a workflow is failing
-            or not producing expected results. Supports filtering by log level, text search, time range
-            (after/before), and pagination via limit.
+            Retrieve execution logs for a specific workflow by ID. Returns log entries with timestamp, level (DEBUG,
+            LOG, INFO, WARN, ERROR), and message. Use to debug why a workflow is failing or not producing expected
+            results. Supports filtering by log level, text search, time range (after/before), and pagination via limit.
     hog-flows-metrics-retrieve:
         operation: hog_flows_metrics_retrieve
         enabled: true
@@ -113,10 +112,10 @@ tools:
             idempotent: true
         title: Get workflow metrics
         description: >
-            Retrieve execution metrics for a specific workflow by ID. Returns time-series data showing
-            success and failure counts over a configurable interval (hour, day, or week). Use to understand
-            workflow health, identify failure spikes, and monitor execution reliability. Supports breakdown
-            by metric kind (success/failure) or name, and time range filtering.
+            Retrieve execution metrics for a specific workflow by ID. Returns time-series data showing success and
+            failure counts over a configurable interval (hour, day, or week). Use to understand workflow health,
+            identify failure spikes, and monitor execution reliability. Supports breakdown by metric kind
+            (success/failure) or name, and time range filtering.
     hog-flows-metrics-totals-retrieve:
         operation: hog_flows_metrics_totals_retrieve
         enabled: false
@@ -137,4 +136,10 @@ tools:
         enabled: false
     hog-flows-schedules-destroy:
         operation: hog_flows_schedules_destroy
+        enabled: false
+    hog-flows-blocked-runs-retrieve:
+        operation: hog_flows_blocked_runs_retrieve
+        enabled: false
+    hog-flows-replay-blocked-run-create:
+        operation: hog_flows_replay_blocked_run_create
         enabled: false
