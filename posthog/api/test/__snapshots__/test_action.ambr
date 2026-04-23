@@ -32,6 +32,7 @@
          "posthog_user"."onboarding_skipped_at",
          "posthog_user"."onboarding_skipped_reason",
          "posthog_user"."onboarding_delegated_to_invite_id",
+         "posthog_user"."onboarding_delegated_to_organization_id",
          "posthog_user"."onboarding_delegation_accepted_at",
          "posthog_user"."events_column_config",
          "posthog_user"."email_opt_in"
@@ -381,6 +382,7 @@
          "posthog_user"."onboarding_skipped_at",
          "posthog_user"."onboarding_skipped_reason",
          "posthog_user"."onboarding_delegated_to_invite_id",
+         "posthog_user"."onboarding_delegated_to_organization_id",
          "posthog_user"."onboarding_delegation_accepted_at",
          "posthog_user"."events_column_config",
          "posthog_user"."email_opt_in"
@@ -460,6 +462,7 @@
          "posthog_user"."onboarding_skipped_at",
          "posthog_user"."onboarding_skipped_reason",
          "posthog_user"."onboarding_delegated_to_invite_id",
+         "posthog_user"."onboarding_delegated_to_organization_id",
          "posthog_user"."onboarding_delegation_accepted_at",
          "posthog_user"."events_column_config",
          "posthog_user"."email_opt_in"
@@ -906,6 +909,7 @@
          "posthog_user"."onboarding_skipped_at",
          "posthog_user"."onboarding_skipped_reason",
          "posthog_user"."onboarding_delegated_to_invite_id",
+         "posthog_user"."onboarding_delegated_to_organization_id",
          "posthog_user"."onboarding_delegation_accepted_at",
          "posthog_user"."events_column_config",
          "posthog_user"."email_opt_in"
@@ -1158,6 +1162,7 @@
          "posthog_user"."onboarding_skipped_at",
          "posthog_user"."onboarding_skipped_reason",
          "posthog_user"."onboarding_delegated_to_invite_id",
+         "posthog_user"."onboarding_delegated_to_organization_id",
          "posthog_user"."onboarding_delegation_accepted_at",
          "posthog_user"."events_column_config",
          "posthog_user"."email_opt_in"
@@ -1213,6 +1218,7 @@
          "posthog_user"."onboarding_skipped_at",
          "posthog_user"."onboarding_skipped_reason",
          "posthog_user"."onboarding_delegated_to_invite_id",
+         "posthog_user"."onboarding_delegated_to_organization_id",
          "posthog_user"."onboarding_delegation_accepted_at",
          "posthog_user"."events_column_config",
          "posthog_user"."email_opt_in"
