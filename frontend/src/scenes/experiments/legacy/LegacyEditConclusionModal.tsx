@@ -23,7 +23,7 @@ export function LegacyEditConclusionModal(): JSX.Element {
             isOpen={isEditConclusionModalOpen}
             onClose={closeEditConclusionModal}
             title="Edit conclusion"
-            width={600}
+            maxWidth="48rem"
             footer={
                 <div className="flex items-center gap-2">
                     <LemonButton
