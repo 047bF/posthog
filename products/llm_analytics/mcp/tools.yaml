@@ -279,39 +279,6 @@ tools:
     llm-analytics-provider-keys-assign-create:
         operation: llm_analytics_provider_keys_assign_create
         enabled: false
-    llm-skills-list:
-        operation: llm_skills_list
-        enabled: false
-    llm-skills-create:
-        operation: llm_skills_create
-        enabled: false
-    llm-skills-name-retrieve:
-        operation: llm_skills_name_retrieve
-        enabled: false
-    llm-skills-name-partial-update:
-        operation: llm_skills_name_partial_update
-        enabled: false
-    llm-skills-name-archive-create:
-        operation: llm_skills_name_archive_create
-        enabled: false
-    llm-skills-name-duplicate-create:
-        operation: llm_skills_name_duplicate_create
-        enabled: false
-    llm-skills-name-files-retrieve:
-        operation: llm_skills_name_files_retrieve
-        enabled: false
-    llm-skills-name-files-create:
-        operation: llm_skills_name_files_create
-        enabled: false
-    llm-skills-name-files-destroy:
-        operation: llm_skills_name_files_destroy
-        enabled: false
-    llm-skills-name-files-rename-create:
-        operation: llm_skills_name_files_rename_create
-        enabled: false
-    llm-skills-resolve-name-retrieve:
-        operation: llm_skills_resolve_name_retrieve
-        enabled: false
     evaluation-runs-create:
         operation: evaluation_runs_create
         enabled: false
