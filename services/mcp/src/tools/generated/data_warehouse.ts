@@ -15,6 +15,7 @@ import {
     ExternalDataSchemasResyncCreateParams,
     ExternalDataSchemasRetrieveParams,
     ExternalDataSourcesCreateBody,
+    ExternalDataSourcesDatabaseSchemaCreateBody,
     ExternalDataSourcesDestroyParams,
     ExternalDataSourcesListQueryParams,
     ExternalDataSourcesPartialUpdateBody,
@@ -50,8 +51,6 @@ import {
     ExternalDataSchemaSyncFrequencySchema,
     ExternalDataSchemaSyncTimeOfDaySchema,
     ExternalDataSchemaSyncTypeSchema,
-    ExternalDataSourcePayloadSchema,
-    ExternalDataSourceTypeSchema,
 } from '@/schema/tool-inputs'
 import { withPostHogUrl, pickResponseFields, type WithPostHogUrl } from '@/tools/tool-utils'
 import type { Context, ToolBase, ZodObjectAny } from '@/tools/types'
@@ -102,10 +101,7 @@ const externalDataSourcesList = (): ToolBase<
     },
 })
 
-const ExternalDataSourcesCreateSchema = ExternalDataSourcesCreateBody.extend({
-    source_type: ExternalDataSourceTypeSchema,
-    payload: ExternalDataSourcePayloadSchema,
-})
+const ExternalDataSourcesCreateSchema = ExternalDataSourcesCreateBody
 
 const externalDataSourcesCreate = (): ToolBase<
     typeof ExternalDataSourcesCreateSchema,
@@ -239,6 +235,32 @@ const externalDataSourcesReload = (): ToolBase<typeof ExternalDataSourcesReloadS
         const result = await context.api.request<unknown>({
             method: 'POST',
             path: `/api/projects/${encodeURIComponent(String(projectId))}/external_data_sources/${encodeURIComponent(String(params.id))}/reload/`,
+        })
+        return result
+    },
+})
+
+const ExternalDataSourcesDbSchemaSchema = ExternalDataSourcesDatabaseSchemaCreateBody
+
+const externalDataSourcesDbSchema = (): ToolBase<typeof ExternalDataSourcesDbSchemaSchema, unknown> => ({
+    name: 'external-data-sources-db-schema',
+    schema: ExternalDataSourcesDbSchemaSchema,
+    handler: async (context: Context, params: z.infer<typeof ExternalDataSourcesDbSchemaSchema>) => {
+        const projectId = await context.stateManager.getProjectId()
+        const body: Record<string, unknown> = {}
+        if (params.source_type !== undefined) {
+            body['source_type'] = params.source_type
+        }
+        if (params.payload !== undefined) {
+            body['payload'] = params.payload
+        }
+        if (params.access_method !== undefined) {
+            body['access_method'] = params.access_method
+        }
+        const result = await context.api.request<unknown>({
+            method: 'POST',
+            path: `/api/projects/${encodeURIComponent(String(projectId))}/external_data_sources/database_schema/`,
+            body,
         })
         return result
     },
@@ -866,6 +888,7 @@ export const GENERATED_TOOLS: Record<string, () => ToolBase<ZodObjectAny>> = {
     'external-data-sources-destroy': externalDataSourcesDestroy,
     'external-data-sources-refresh-schemas': externalDataSourcesRefreshSchemas,
     'external-data-sources-reload': externalDataSourcesReload,
+    'external-data-sources-db-schema': externalDataSourcesDbSchema,
     'external-data-sources-wizard': externalDataSourcesWizard,
     'sql-variables-create': sqlVariablesCreate,
     'sql-variables-update': sqlVariablesUpdate,
