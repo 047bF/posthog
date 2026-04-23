@@ -34,9 +34,9 @@ class CreateRunInput:
     branch: str
     snapshots: list[SnapshotManifestItem]
     pr_number: int | None = None
+    # Deprecated: backend fetches baselines from GitHub. Kept for old CLI compat.
     baseline_hashes: dict[str, str] = field(default_factory=dict)
-    # Delta mode: CLI pre-compares hashes and sends only changed/new snapshots.
-    # unchanged_count lets the backend set total without creating rows for unchanged.
+    # Deprecated: backend computes from RunSnapshot rows at complete time.
     unchanged_count: int = 0
     removed_identifiers: list[str] = field(default_factory=list)
     purpose: str = "review"
@@ -92,15 +92,6 @@ class UploadTarget:
 
 
 @dataclass(frozen=True)
-class CompleteRunInput:
-    """Optional body for completing a run. Supports shard flow reconciliation."""
-
-    removed_identifiers: list[str] = field(default_factory=list)
-    unchanged_count: int = 0
-    baseline_hashes: dict[str, str] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
 class AddSnapshotsInput:
     """Batch of snapshots to add to an existing run (shard-based flow)."""
 
@@ -136,12 +127,22 @@ class Artifact:
 
 
 @dataclass(frozen=True)
+class UserBasicInfo:
+    """Lightweight user info for display purposes."""
+
+    id: int
+    first_name: str
+    email: str
+
+
+@dataclass(frozen=True)
 class Snapshot:
     """A snapshot with its comparison results."""
 
     id: UUID
     identifier: str
     result: str
+    classification_reason: str  # exact, tolerated_hash, below_threshold, or ""
     current_artifact: Artifact | None
     baseline_artifact: Artifact | None
     diff_artifact: Artifact | None
@@ -151,6 +152,9 @@ class Snapshot:
     review_state: str  # pending, approved, (future: rejected)
     reviewed_at: datetime | None
     approved_hash: str
+    tolerated_hash_id: UUID | None = None
+    is_quarantined: bool = False
+    reviewed_by: UserBasicInfo | None = None
     # Flexible metadata (browser, viewport, is_critical, is_flaky, page_group, etc.)
     metadata: dict = field(default_factory=dict)
 
@@ -164,6 +168,7 @@ class RunSummary:
     new: int
     removed: int
     unchanged: int
+    tolerated_matched: int = 0
 
 
 @dataclass(frozen=True)
@@ -184,6 +189,8 @@ class Run:
     created_at: datetime
     completed_at: datetime | None
     is_stale: bool = False
+    superseded_by_id: UUID | None = None
+    approved_by: UserBasicInfo | None = None
     # Flexible metadata (pr_title, ci_job_url, base_branch, etc.)
     metadata: dict = field(default_factory=dict)
 
@@ -194,6 +201,41 @@ class AutoApproveResult:
 
     run: Run
     baseline_content: str
+
+
+@dataclass(frozen=True)
+class ToleratedHashEntry:
+    """A known tolerated alternate hash for a snapshot identifier."""
+
+    id: UUID
+    alternate_hash: str
+    baseline_hash: str
+    reason: str
+    created_at: datetime
+    source_run_id: UUID | None
+
+
+@dataclass(frozen=True)
+class QuarantinedIdentifierEntry:
+    """A quarantined snapshot identifier."""
+
+    id: UUID
+    identifier: str
+    run_type: str
+    reason: str
+    expires_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    created_by: UserBasicInfo | None = None
+
+
+@dataclass(frozen=True)
+class QuarantineInput:
+    """Input for quarantining an identifier. run_type comes from URL path."""
+
+    identifier: str
+    reason: str
+    expires_at: datetime | None = None
 
 
 @dataclass(frozen=True)

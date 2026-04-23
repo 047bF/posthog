@@ -7,7 +7,7 @@ import api from 'lib/api'
 import { SetupTaskId, globalSetupLogic } from 'lib/components/ProductSetup'
 import { dayjs } from 'lib/dayjs'
 import { lemonToast } from 'lib/lemon-ui/LemonToast/LemonToast'
-import { featureFlagLogic } from 'lib/logic/featureFlagLogic'
+import { featureFlagLogic, type FeatureFlagsSet } from 'lib/logic/featureFlagLogic'
 import { hasFormErrors, toParams } from 'lib/utils'
 import { eventUsageLogic } from 'lib/utils/eventUsageLogic'
 import { addProjectIdIfMissing } from 'lib/utils/router-utils'
@@ -18,10 +18,8 @@ import { runWithLimit } from 'scenes/dashboard/dashboardUtils'
 import {
     hasMultipleVariantsActive,
     hasZeroRollout,
-    indexToVariantKeyFeatureFlagPayloads,
     featureFlagLogic as sceneFeatureFlagLogic,
     validateFeatureFlagKey,
-    variantKeyToIndexFeatureFlagPayloads,
 } from 'scenes/feature-flags/featureFlagLogic'
 import { featureFlagsLogic } from 'scenes/feature-flags/featureFlagsLogic'
 import { funnelDataLogic } from 'scenes/funnels/funnelDataLogic'
@@ -91,13 +89,20 @@ import {
 } from './experimentsLogic'
 import { holdoutsLogic } from './holdoutsLogic'
 import {
-    conversionRateForVariant,
-    expectedRunningTime,
-    getSignificanceDetails,
-    minimumSampleSizePerVariant,
-    recommendedExposureForCountData,
-} from './legacyExperimentCalculations'
-import { addExposureToMetric, compose, getInsight, getQuery } from './metricQueryUtils'
+    legacyConversionRateForVariant,
+    legacyExpectedRunningTime,
+    legacyGetSignificanceDetails,
+    legacyMinimumSampleSizePerVariant,
+    legacyRecommendedExposureForCountData,
+} from './legacy/calculations/legacyExperimentCalculations'
+import {
+    addExposureToMetric,
+    compose,
+    getExperimentExecutionMode,
+    getExperimentRefreshMode,
+    getInsight,
+    getQuery,
+} from './metricQueryUtils'
 import { getDefaultMetricTitle } from './MetricsView/shared/utils'
 import { modalsLogic } from './modalsLogic'
 import { SharedMetric } from './SharedMetrics/sharedMetricLogic'
@@ -196,6 +201,7 @@ interface MetricLoadingConfig {
     isRetry: boolean
     metricIndexOffset: number
     orderedUuids?: string[] | null
+    featureFlags: FeatureFlagsSet
     onSetLegacyResults: (
         results: (
             | CachedLegacyExperimentQueryResponse
@@ -325,6 +331,7 @@ const loadMetrics = async ({
     isRetry,
     metricIndexOffset,
     orderedUuids,
+    featureFlags,
     onSetLegacyResults,
     onSetResults,
     onSetErrors,
@@ -372,7 +379,7 @@ const loadMetrics = async ({
                 response = await performQuery(
                     setLatestVersionsOnQuery(queryWithExperimentId),
                     undefined,
-                    refresh ? 'force_async' : 'async'
+                    getExperimentRefreshMode(featureFlags, !!refresh)
                 )
 
                 const durationMs = Math.round(performance.now() - startTime)
@@ -424,6 +431,7 @@ const loadMetrics = async ({
                         is_retry: isRetry,
                         refresh_id: refreshId,
                         metric_kind: metricKind,
+                        execution_mode: getExperimentExecutionMode(featureFlags),
                     }
                 )
             } catch (error: any) {
@@ -616,7 +624,7 @@ export const experimentLogic = kea<experimentLogicType>([
             teamLogic,
             ['addProductIntent'],
             featureFlagsLogic,
-            ['updateFlag'],
+            ['updateFlagFromPartial'],
             modalsLogic,
             [
                 'openPrimaryMetricModal',
@@ -791,7 +799,10 @@ export const experimentLogic = kea<experimentLogicType>([
                 | null
             )[]
         ) => ({ results }),
-        updateDistribution: (featureFlag: FeatureFlagType) => ({ featureFlag }),
+        updateDistribution: (variants: MultivariateFlagVariant[], rolloutPercentage?: number) => ({
+            variants,
+            rolloutPercentage,
+        }),
         setAutoRefresh: (enabled: boolean, interval: number) => ({ enabled, interval }),
         resetAutoRefreshInterval: true,
         stopAutoRefreshInterval: true,
@@ -800,8 +811,15 @@ export const experimentLogic = kea<experimentLogicType>([
         dismissNotificationOffer: true,
         setShowNotificationOffer: (show: boolean) => ({ show }),
         setNotifyWhenResultsReady: (notify: boolean) => ({ notify }),
+        toggleDebugPanel: true,
     }),
     reducers({
+        showDebugPanel: [
+            false,
+            {
+                toggleDebugPanel: (state) => !state,
+            },
+        ],
         experiment: [
             { ...NEW_EXPERIMENT } as Experiment,
             {
@@ -1374,6 +1392,9 @@ export const experimentLogic = kea<experimentLogicType>([
                                 ...values.experiment.filters,
                                 properties: [],
                             },
+                            // Signal the backend to sync variant split and rollout
+                            // percentage to the linked feature flag.
+                            update_feature_flag_params: true,
                         }
                     )
 
@@ -1483,11 +1504,11 @@ export const experimentLogic = kea<experimentLogicType>([
             }
         },
         changeExperimentStartDate: async ({ startDate }) => {
-            actions.updateExperiment({ start_date: startDate })
+            actions.updateExperiment({ start_date: startDate, update_feature_flag_params: false })
             values.experiment && eventUsageLogic.actions.reportExperimentStartDateChange(values.experiment, startDate)
         },
         changeExperimentEndDate: async ({ endDate }) => {
-            actions.updateExperiment({ end_date: endDate })
+            actions.updateExperiment({ end_date: endDate, update_feature_flag_params: false })
             values.experiment && eventUsageLogic.actions.reportExperimentEndDateChange(values.experiment, endDate)
         },
         endExperiment: async () => {
@@ -1610,6 +1631,7 @@ export const experimentLogic = kea<experimentLogicType>([
                             : null,
                         experiment_status: values.experiment?.status ?? null,
                         total_metrics_count: primaryCount + secondaryCount,
+                        execution_mode: getExperimentExecutionMode(values.featureFlags),
                     }
                 )
 
@@ -1653,6 +1675,7 @@ export const experimentLogic = kea<experimentLogicType>([
             actions.updateExperiment({
                 metrics: values.experiment.metrics,
                 metrics_secondary: values.experiment.metrics_secondary,
+                update_feature_flag_params: false,
             })
         },
         updateExperimentCollectionGoal: async () => {
@@ -1665,6 +1688,7 @@ export const experimentLogic = kea<experimentLogicType>([
                     recommended_sample_size: recommendedSampleSize,
                     minimum_detectable_effect: minimumDetectableEffect || 0,
                 },
+                update_feature_flag_params: false,
             })
         },
         updateExposureCriteria: async () => {
@@ -1672,6 +1696,7 @@ export const experimentLogic = kea<experimentLogicType>([
                 exposure_criteria: {
                     ...values.experiment.exposure_criteria,
                 },
+                update_feature_flag_params: false,
             })
             actions.refreshExperimentResults(true, 'config_change')
         },
@@ -1690,6 +1715,9 @@ export const experimentLogic = kea<experimentLogicType>([
         },
         updateExperimentSuccess: async ({ experiment, payload }) => {
             actions.updateExperiments(experiment)
+            if (payload?.update_feature_flag_params && experiment.feature_flag) {
+                actions.updateFlagFromPartial(experiment.feature_flag)
+            }
             if (isLaunched(experiment)) {
                 // For launched experiments, refresh results if any of these fields are updated
                 const forceRefresh =
@@ -1761,6 +1789,7 @@ export const experimentLogic = kea<experimentLogicType>([
                 }
                 await api.update(`api/projects/${values.currentProjectId}/experiments/${values.experimentId}`, {
                     parameters: updatedParameters,
+                    update_feature_flag_params: false,
                 })
                 actions.setExperiment({
                     parameters: updatedParameters,
@@ -1769,21 +1798,16 @@ export const experimentLogic = kea<experimentLogicType>([
                 lemonToast.error('Failed to update experiment variant images')
             }
         },
-        updateDistribution: async ({ featureFlag }) => {
-            const { created_at, id, ...flag } = featureFlag
-
-            const preparedFlag = indexToVariantKeyFeatureFlagPayloads(flag)
-
-            const savedFlag = await api.update(
-                `api/projects/${values.currentProjectId}/feature_flags/${id}`,
-                preparedFlag
-            )
-
-            const updatedFlag = variantKeyToIndexFeatureFlagPayloads(savedFlag)
-            actions.updateFlag(updatedFlag)
-
+        updateDistribution: async ({ variants, rolloutPercentage }) => {
+            const { rollout_percentage: _, ...otherParams } = values.experiment?.parameters || {}
             actions.updateExperiment({
+                parameters: {
+                    ...otherParams,
+                    feature_flag_variants: variants,
+                    ...(rolloutPercentage !== undefined ? { rollout_percentage: rolloutPercentage } : {}),
+                },
                 holdout_id: values.experiment.holdout_id,
+                update_feature_flag_params: true,
             })
         },
         addSharedMetricsToExperiment: async ({ sharedMetricIds, metadata }) => {
@@ -1803,6 +1827,7 @@ export const experimentLogic = kea<experimentLogicType>([
 
             await api.update(`api/projects/${values.currentProjectId}/experiments/${values.experimentId}`, {
                 saved_metrics_ids: combinedMetricsIds,
+                update_feature_flag_params: false,
             })
 
             actions.loadExperiment({ triggeredBy: 'config_change' })
@@ -1827,6 +1852,7 @@ export const experimentLogic = kea<experimentLogicType>([
                 saved_metrics_ids: sharedMetricsIds,
                 metrics: cleanedMetrics,
                 metrics_secondary: cleanedMetricsSecondary,
+                update_feature_flag_params: false,
             })
 
             actions.loadExperiment({ triggeredBy: 'config_change' })
@@ -1915,6 +1941,7 @@ export const experimentLogic = kea<experimentLogicType>([
                     description:
                         (values.experiment.description ? values.experiment.description + `\n\n` : '') +
                         `Dashboard: [${dashboardUrl}](${dashboardUrl})`,
+                    update_feature_flag_params: false,
                 })
 
                 lemonToast.success('Dashboard created successfully', {
@@ -2005,6 +2032,7 @@ export const experimentLogic = kea<experimentLogicType>([
                 isRetry: false,
                 metricIndexOffset: 0,
                 orderedUuids: values.experiment?.primary_metrics_ordered_uuids,
+                featureFlags: values.featureFlags,
                 onSetLegacyResults: actions.setLegacyPrimaryMetricsResults,
                 onSetResults: actions.setPrimaryMetricsResults,
                 onSetErrors: actions.setPrimaryMetricsResultsErrors,
@@ -2044,6 +2072,7 @@ export const experimentLogic = kea<experimentLogicType>([
                 isRetry: false,
                 metricIndexOffset: 0,
                 orderedUuids: values.experiment?.secondary_metrics_ordered_uuids,
+                featureFlags: values.featureFlags,
                 onSetLegacyResults: actions.setLegacySecondaryMetricsResults,
                 onSetResults: actions.setSecondaryMetricsResults,
                 onSetErrors: actions.setSecondaryMetricsResultsErrors,
@@ -2091,6 +2120,7 @@ export const experimentLogic = kea<experimentLogicType>([
                 isPrimary: true,
                 isRetry: true,
                 metricIndexOffset: index,
+                featureFlags: values.featureFlags,
                 onSetLegacyResults: (results) => {
                     currentLegacyResults[index] = results[0]
                     actions.setLegacyPrimaryMetricsResults(currentLegacyResults)
@@ -2139,6 +2169,7 @@ export const experimentLogic = kea<experimentLogicType>([
                 isPrimary: false,
                 isRetry: true,
                 metricIndexOffset: index,
+                featureFlags: values.featureFlags,
                 onSetLegacyResults: (results) => {
                     currentLegacyResults[index] = results[0]
                     actions.setLegacySecondaryMetricsResults(currentLegacyResults)
@@ -2171,9 +2202,10 @@ export const experimentLogic = kea<experimentLogicType>([
             // Check if this is a shared metric by looking in saved_metrics
             const isSharedMetric = savedMetrics.some(({ query: { uuid: savedMetricUuid } }) => savedMetricUuid === uuid)
 
-            const updatePayload: Partial<Experiment> = {
+            const updatePayload: Partial<Experiment> & { update_feature_flag_params?: boolean } = {
                 metrics: values.experiment.metrics,
                 metrics_secondary: values.experiment.metrics_secondary,
+                update_feature_flag_params: false,
             }
 
             // Only include saved_metrics_ids if we modified a shared metric
@@ -2201,9 +2233,10 @@ export const experimentLogic = kea<experimentLogicType>([
             // Check if this is a shared metric by looking in saved_metrics
             const isSharedMetric = savedMetrics.some(({ query: { uuid: savedMetricUuid } }) => savedMetricUuid === uuid)
 
-            const updatePayload: Partial<Experiment> = {
+            const updatePayload: Partial<Experiment> & { update_feature_flag_params?: boolean } = {
                 metrics: values.experiment.metrics,
                 metrics_secondary: values.experiment.metrics_secondary,
+                update_feature_flag_params: false,
             }
 
             // Only include saved_metrics_ids if we modified a shared metric
@@ -2259,8 +2292,8 @@ export const experimentLogic = kea<experimentLogicType>([
     })),
     loaders(({ actions, values }) => ({
         experiment: {
-            loadExperiment: async ({ triggeredBy }: { triggeredBy?: ExperimentTriggeredBy } = {}) => {
-                void triggeredBy
+            loadExperiment: async (payload?: { triggeredBy?: ExperimentTriggeredBy }) => {
+                void payload?.triggeredBy
                 if (values.experimentId && values.experimentId !== 'new') {
                     try {
                         let response: Experiment = await api.get(
@@ -2306,7 +2339,7 @@ export const experimentLogic = kea<experimentLogicType>([
                 }
                 return NEW_EXPERIMENT
             },
-            updateExperiment: async (update: Partial<Experiment>) => {
+            updateExperiment: async (update: Partial<Experiment> & { update_feature_flag_params?: boolean }) => {
                 const response: Experiment = await api.update(
                     `api/projects/${values.currentProjectId}/experiments/${values.experimentId}`,
                     update
@@ -2348,7 +2381,7 @@ export const experimentLogic = kea<experimentLogicType>([
                         end_date: experiment.end_date,
                         holdout: experiment.holdout,
                     })
-                    return await performQuery(query, undefined, refresh ? 'force_async' : 'async')
+                    return await performQuery(query, undefined, getExperimentRefreshMode(values.featureFlags, refresh))
                 },
             },
         ],
@@ -2520,14 +2553,14 @@ export const experimentLogic = kea<experimentLogicType>([
                     }
 
                     const results = legacyPrimaryMetricsResults?.[index]
-                    return getSignificanceDetails(results)
+                    return legacyGetSignificanceDetails(results)
                 },
         ],
         recommendedSampleSize: [
             (s) => [s.conversionMetrics, s.variants, s.minimumDetectableEffect],
             (conversionMetrics, variants, minimumDetectableEffect): number => {
                 const conversionRate = conversionMetrics.totalRate * 100
-                const sampleSizePerVariant = minimumSampleSizePerVariant(minimumDetectableEffect, conversionRate)
+                const sampleSizePerVariant = legacyMinimumSampleSizePerVariant(minimumDetectableEffect, conversionRate)
                 const sampleSize = sampleSizePerVariant * variants.length
                 return sampleSize
             },
@@ -2565,16 +2598,19 @@ export const experimentLogic = kea<experimentLogicType>([
                     }
 
                     const conversionRate = conversionMetrics.totalRate * 100
-                    const sampleSizePerVariant = minimumSampleSizePerVariant(minimumDetectableEffect, conversionRate)
+                    const sampleSizePerVariant = legacyMinimumSampleSizePerVariant(
+                        minimumDetectableEffect,
+                        conversionRate
+                    )
                     const funnelSampleSize = sampleSizePerVariant * variants.length
                     if (experiment?.start_date) {
-                        return expectedRunningTime(funnelEntrants || 1, funnelSampleSize || 0, currentDuration)
+                        return legacyExpectedRunningTime(funnelEntrants || 1, funnelSampleSize || 0, currentDuration)
                     }
-                    return expectedRunningTime(funnelEntrants || 1, funnelSampleSize || 0)
+                    return legacyExpectedRunningTime(funnelEntrants || 1, funnelSampleSize || 0)
                 }
 
                 const trendCount = trendResults[0]?.count
-                const runningTime = recommendedExposureForCountData(minimumDetectableEffect, trendCount)
+                const runningTime = legacyRecommendedExposureForCountData(minimumDetectableEffect, trendCount)
                 return runningTime
             },
         ],
@@ -2679,7 +2715,7 @@ export const experimentLogic = kea<experimentLogicType>([
                         .map((key) => ({
                             key,
                             winProbability: result.probability[key],
-                            conversionRate: conversionRateForVariant(result, key),
+                            conversionRate: legacyConversionRateForVariant(result, key),
                         }))
                         .sort((a, b) => b.winProbability - a.winProbability)
                 },

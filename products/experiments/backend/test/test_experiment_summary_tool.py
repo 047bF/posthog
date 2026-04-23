@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 from django.test import override_settings
 from django.utils import timezone
 
+from parameterized import parameterized
+
 from posthog.schema import (
     ExperimentVariantResultBayesian,
     ExperimentVariantResultFrequentist,
@@ -15,16 +17,19 @@ from posthog.schema import (
     MaxExperimentVariantResultFrequentist,
 )
 
+from posthog.hogql.constants import LimitContext
+
+from posthog.hogql_queries.query_runner import ExecutionMode
 from posthog.models.feature_flag.feature_flag import FeatureFlag
 
 from products.experiments.backend.experiment_summary_data_service import (
     ExperimentSummaryDataService,
     get_chance_to_win,
-    get_default_metric_title,
     get_delta_from_interval,
     parse_metric_dict,
     transform_variant_for_max,
 )
+from products.experiments.backend.metric_utils import get_default_metric_title
 from products.experiments.backend.models.experiment import Experiment
 
 
@@ -161,38 +166,42 @@ class TestExperimentSummaryToolHelpers(APIBaseTest):
         assert isinstance(result, MaxExperimentVariantResultBayesian)
         self.assertEqual(result.chance_to_win, 0.85)
 
-    def test_get_default_metric_title_funnel_single_event(self):
-        metric_dict = {
-            "metric_type": "funnel",
-            "series": [{"event": "purchase"}],
-        }
-        self.assertEqual(get_default_metric_title(metric_dict), "purchase conversion")
-
-    def test_get_default_metric_title_funnel_multiple_events(self):
-        metric_dict = {
-            "metric_type": "funnel",
-            "series": [
-                {"event": "view_page"},
-                {"event": "add_to_cart"},
-                {"event": "purchase"},
-            ],
-        }
-        self.assertEqual(get_default_metric_title(metric_dict), "view_page to purchase")
-
-    def test_get_default_metric_title_mean(self):
-        metric_dict = {
-            "metric_type": "mean",
-            "source": {"event": "revenue"},
-        }
-        self.assertEqual(get_default_metric_title(metric_dict), "Mean revenue")
-
-    def test_get_default_metric_title_ratio(self):
-        metric_dict = {"metric_type": "ratio"}
-        self.assertEqual(get_default_metric_title(metric_dict), "Ratio metric")
-
-    def test_get_default_metric_title_retention(self):
-        metric_dict = {"metric_type": "retention"}
-        self.assertEqual(get_default_metric_title(metric_dict), "Retention metric")
+    @parameterized.expand(
+        [
+            ("funnel_single", {"metric_type": "funnel", "series": [{"event": "purchase"}]}, "purchase conversion"),
+            (
+                "funnel_multi",
+                {
+                    "metric_type": "funnel",
+                    "series": [{"event": "view_page"}, {"event": "add_to_cart"}, {"event": "purchase"}],
+                },
+                "view_page to purchase",
+            ),
+            ("mean", {"metric_type": "mean", "source": {"event": "revenue"}}, "Mean revenue"),
+            ("ratio_no_events", {"metric_type": "ratio"}, "Event / Event"),
+            (
+                "ratio_with_events",
+                {
+                    "metric_type": "ratio",
+                    "numerator": {"kind": "EventsNode", "event": "$pageview"},
+                    "denominator": {"kind": "EventsNode", "event": "experiment timeseries viewed"},
+                },
+                "$pageview / experiment timeseries viewed",
+            ),
+            ("retention_no_events", {"metric_type": "retention"}, "Event / Event"),
+            (
+                "retention_with_events",
+                {
+                    "metric_type": "retention",
+                    "start_event": {"kind": "EventsNode", "event": "$pageview"},
+                    "completion_event": {"kind": "EventsNode", "event": "purchase"},
+                },
+                "$pageview / purchase",
+            ),
+        ]
+    )
+    def test_get_default_metric_title(self, _name, metric_dict, expected):
+        self.assertEqual(get_default_metric_title(metric_dict), expected)
 
 
 @override_settings(IN_UNIT_TESTING=True)
@@ -329,6 +338,10 @@ class TestExperimentSummaryDataService(ClickhouseTestMixin, APIBaseTest):
 
         with (
             patch(
+                "products.experiments.backend.experiment_summary_data_service.posthoganalytics.feature_enabled",
+                return_value=False,
+            ),
+            patch(
                 "products.experiments.backend.experiment_summary_data_service.ExperimentQueryRunner"
             ) as mock_query_runner_class,
             patch(
@@ -347,3 +360,76 @@ class TestExperimentSummaryDataService(ClickhouseTestMixin, APIBaseTest):
         self.assertEqual(context.exposures, {"control": 500.0, "test": 500.0})
         self.assertIsNotNone(last_refresh)
         self.assertFalse(pending_calculation)
+        self.assertEqual(mock_query_runner_class.call_args.kwargs["limit_context"], LimitContext.QUERY_ASYNC)
+        self.assertEqual(mock_exposure_runner_class.call_args.kwargs["limit_context"], LimitContext.QUERY_ASYNC)
+        self.assertEqual(
+            mock_query_runner_class.return_value.run.call_args.kwargs["execution_mode"],
+            ExecutionMode.RECENT_CACHE_CALCULATE_ASYNC_IF_STALE_AND_BLOCKING_ON_MISS,
+        )
+        self.assertEqual(
+            mock_exposure_runner_class.return_value.run.call_args.kwargs["execution_mode"],
+            ExecutionMode.RECENT_CACHE_CALCULATE_ASYNC_IF_STALE_AND_BLOCKING_ON_MISS,
+        )
+
+    @freeze_time("2020-01-10T12:00:00Z")
+    async def test_fetch_experiment_data_uses_sync_execution_when_rollout_flag_enabled(self):
+        experiment = await self.acreate_experiment(name="query-runner-sync-test", with_metrics=True)
+
+        mock_query_result = MagicMock()
+        mock_query_result.variant_results = []
+        mock_query_result.last_refresh = datetime(2020, 1, 10, 11, 0, tzinfo=ZoneInfo("UTC"))
+
+        mock_exposure_result = MagicMock()
+        mock_exposure_result.total_exposures = {"control": 500, "test": 500}
+        mock_exposure_result.last_refresh = datetime(2020, 1, 10, 11, 0, tzinfo=ZoneInfo("UTC"))
+
+        with (
+            patch(
+                "products.experiments.backend.experiment_summary_data_service.posthoganalytics.feature_enabled",
+                return_value=True,
+            ),
+            patch(
+                "products.experiments.backend.experiment_summary_data_service.ExperimentQueryRunner"
+            ) as mock_query_runner_class,
+            patch(
+                "products.experiments.backend.experiment_summary_data_service.ExperimentExposuresQueryRunner"
+            ) as mock_exposure_runner_class,
+        ):
+            mock_query_runner_class.return_value.run.return_value = mock_query_result
+            mock_exposure_runner_class.return_value.run.return_value = mock_exposure_result
+
+            data_service = ExperimentSummaryDataService(self.team)
+            await data_service.fetch_experiment_data(experiment.id)
+
+        self.assertEqual(
+            mock_query_runner_class.return_value.run.call_args.kwargs["execution_mode"],
+            ExecutionMode.RECENT_CACHE_CALCULATE_BLOCKING_IF_STALE,
+        )
+        self.assertEqual(
+            mock_exposure_runner_class.return_value.run.call_args.kwargs["execution_mode"],
+            ExecutionMode.RECENT_CACHE_CALCULATE_BLOCKING_IF_STALE,
+        )
+
+    @freeze_time("2020-01-10T12:00:00Z")
+    async def test_fetch_experiment_data_executes_queries_on_cold_cache(self):
+        """
+        On a cold cache, queries must execute synchronously rather than
+        returning a CacheMissResponse. Previously the data service used
+        RECENT_CACHE_CALCULATE_ASYNC_IF_STALE which returned immediately
+        on cache miss, giving the AI zero results and causing hallucinations.
+        """
+        experiment = await self.acreate_experiment(name="cold-cache-test", with_metrics=False)
+        experiment.metrics = [
+            {
+                "metric_type": "mean",
+                "source": {"kind": "EventsNode", "event": "purchase"},
+                "name": "Purchase value",
+            }
+        ]
+        await experiment.asave(update_fields=["metrics"])
+
+        data_service = ExperimentSummaryDataService(self.team)
+        context, last_refresh, pending_calculation = await data_service.fetch_experiment_data(experiment.id)
+
+        self.assertFalse(pending_calculation)
+        self.assertIsNotNone(last_refresh)

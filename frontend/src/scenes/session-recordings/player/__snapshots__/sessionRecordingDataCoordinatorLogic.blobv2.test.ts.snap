@@ -3,7 +3,7 @@
 exports[`sessionRecordingDataCoordinatorLogic blobby v2 loading session core loads all data 1`] = `
 {
   "bufferedToTime": 64587933939,
-  "durationMs": 64587933939,
+  "durationMs": 11000,
   "end": "2025-05-18T03:51:54.816Z",
   "fullyLoaded": true,
   "person": {

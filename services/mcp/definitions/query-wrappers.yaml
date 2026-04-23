@@ -21,6 +21,7 @@ wrappers:
         title: Run a trends query
         description_file: ./prompts/query-trends.md
         ui_resource_uri: ui://posthog/query-results.html
+        use_optimized_output: true
         exclude_properties:
             - response
             - modifiers
@@ -39,6 +40,7 @@ wrappers:
         title: Run a funnel query
         description_file: ./prompts/query-funnel.md
         ui_resource_uri: ui://posthog/query-results.html
+        use_optimized_output: true
         exclude_properties:
             - response
             - modifiers
@@ -57,6 +59,7 @@ wrappers:
         title: Run a retention query
         description_file: ./prompts/query-retention.md
         ui_resource_uri: ui://posthog/query-results.html
+        use_optimized_output: true
         exclude_properties:
             - response
             - modifiers
@@ -75,6 +78,7 @@ wrappers:
         title: Run a stickiness query
         description_file: ./prompts/query-stickiness.md
         ui_resource_uri: ui://posthog/query-results.html
+        use_optimized_output: true
         exclude_properties:
             - response
             - modifiers
@@ -93,6 +97,7 @@ wrappers:
         title: Run a paths query
         description_file: ./prompts/query-paths.md
         ui_resource_uri: ui://posthog/query-results.html
+        use_optimized_output: true
         exclude_properties:
             - response
             - modifiers
@@ -111,13 +116,14 @@ wrappers:
         title: Run a lifecycle query
         description_file: ./prompts/query-lifecycle.md
         ui_resource_uri: ui://posthog/query-results.html
+        use_optimized_output: true
         exclude_properties:
             - response
             - modifiers
             - samplingFactor
 
-    query-traces-list:
-        schema_ref: TracesQuery
+    query-llm-traces-list:
+        schema_ref: AssistantTracesQuery
         enabled: true
         scopes:
             - query:read
@@ -127,13 +133,41 @@ wrappers:
             idempotent: true
         mcp_version: 2
         title: List LLM traces
-        description: >
-            Query LLM traces to inspect AI/LLM usage. Returns a list of traces
-            with their events, latency, token usage, and other metadata.
-            Use dateRange, properties, and limit to filter results.
+        description_file: ./prompts/query-llm-traces-list.md
         exclude_properties:
             - response
             - modifiers
-            - showColumnConfigurator
-            - tags
-            - version
+
+    query-llm-trace:
+        schema_ref: AssistantTraceQuery
+        enabled: true
+        scopes:
+            - query:read
+        annotations:
+            readOnly: true
+            destructive: false
+            idempotent: true
+        mcp_version: 2
+        title: Get LLM trace
+        description_file: ./prompts/query-llm-trace.md
+        exclude_properties:
+            - response
+            - modifiers
+
+    query-trends-actors:
+        schema_ref: AssistantTrendsActorsQuery
+        enabled: true
+        scopes:
+            - query:read
+            - person:read
+        annotations:
+            readOnly: true
+            destructive: false
+            idempotent: true
+        mcp_version: 2
+        title: List persons behind a trends data point
+        description_file: ./prompts/query-trends-actors.md
+        ui_resource_uri: ui://posthog/query-results.html
+        exclude_properties:
+            - response
+            - modifiers

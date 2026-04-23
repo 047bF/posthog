@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from posthog.schema import (
     DateRange,
     FilterLogicalOperator,
-    HogQLFilters,
+    HogQLQueryModifiers,
     HogQLQueryResponse,
     IntervalType,
     LogsQuery,
@@ -16,7 +16,7 @@ from posthog.schema import (
 
 from posthog.hogql import ast
 from posthog.hogql.constants import HogQLGlobalSettings, LimitContext
-from posthog.hogql.parser import parse_select
+from posthog.hogql.parser import parse_expr, parse_select
 from posthog.hogql.query import execute_hogql_query
 
 from posthog.clickhouse.client.connection import Workload
@@ -83,7 +83,24 @@ class AlertCheckQuery:
             exact_timerange=True,
         )
         builder = LogsFilterBuilder(logs_query, team, query_date_range)
-        self.where_expr = builder.where()
+        base_where = builder.where()
+
+        # Add explicit timestamp bounds using a half-open interval [from, to).
+        # This ensures adjacent alert windows don't double-count logs at the boundary.
+        # LogsFilterBuilder.where() includes a {filters} placeholder that resolves
+        # to `true` when no HogQLFilters are passed to execute_hogql_query.
+        self.where_expr = ast.And(
+            exprs=[
+                base_where,
+                parse_expr(
+                    "timestamp >= {date_from} AND timestamp < {date_to}",
+                    placeholders={
+                        "date_from": ast.Constant(value=date_from),
+                        "date_to": ast.Constant(value=date_to),
+                    },
+                ),
+            ]
+        )
 
     def execute(self) -> AlertCheckCountResult:
         """Return a single aggregate count for the alert window."""
@@ -105,7 +122,7 @@ class AlertCheckQuery:
         count = response.results[0][0] if response.results else 0
         return AlertCheckCountResult(count=count, query_duration_ms=duration_ms)
 
-    def execute_bucketed(self, interval_minutes: int) -> list[BucketedCount]:
+    def execute_bucketed(self, interval_minutes: int, *, limit: int = 10_000) -> list[BucketedCount]:
         """Return time-bucketed counts for preview charts."""
         self._tag()
 
@@ -125,12 +142,13 @@ class AlertCheckQuery:
             WHERE {where}
             GROUP BY bucket
             ORDER BY bucket ASC
-            LIMIT 10000
+            LIMIT {row_limit}
             """,
             placeholders={
                 "time_field": time_field,
                 "bucket_minutes": ast.Constant(value=interval_minutes),
                 "where": self.where_expr,
+                "row_limit": ast.Constant(value=limit),
             },
         )
 
@@ -148,7 +166,7 @@ class AlertCheckQuery:
             workload=Workload.LOGS,
             settings=self.SETTINGS,
             limit_context=LimitContext.QUERY,
-            filters=HogQLFilters(dateRange=self.date_range),
+            modifiers=HogQLQueryModifiers(convertToProjectTimezone=False),
         )
 
     def _tag(self) -> None:
@@ -172,6 +190,46 @@ class AlertCheckQuery:
             filterGroup=pg,
             kind="LogsQuery",
         )
+
+
+# Explicit per-partition `GROUP BY` is required on both the dev `MergeTree`
+# shard (no auto-merge at all) and the prod `AggregatingMergeTree` between
+# merges. A bare `min(max_observed_timestamp)` scans every raw insert and
+# returns the oldest value ever written.
+_LIVE_LOGS_CHECKPOINT_SQL = """
+    SELECT min(partition_checkpoint) FROM (
+        SELECT _topic, _partition, max(max_observed_timestamp) AS partition_checkpoint
+        FROM logs_kafka_metrics
+        GROUP BY _topic, _partition
+    )
+"""
+
+# Fall back to `now` when the checkpoint is older than this — a quiet partition
+# can pin `min(...)` hours behind while other partitions have fresh data.
+CHECKPOINT_MAX_STALENESS = dt.timedelta(minutes=5)
+
+
+def fetch_live_logs_checkpoint(team: Team) -> dt.datetime | None:
+    response = execute_hogql_query(
+        query_type="alert_check_checkpoint",
+        query=parse_select(_LIVE_LOGS_CHECKPOINT_SQL),
+        team=team,
+        workload=Workload.LOGS,
+        modifiers=HogQLQueryModifiers(convertToProjectTimezone=False),
+    )
+    if not response.results or response.results[0][0] is None:
+        return None
+    checkpoint = response.results[0][0]
+    if checkpoint.tzinfo is None:
+        checkpoint = checkpoint.replace(tzinfo=ZoneInfo("UTC"))
+    return checkpoint
+
+
+def resolve_alert_date_to(now: dt.datetime, checkpoint: dt.datetime | None) -> dt.datetime:
+    """Anchor `date_to` on the checkpoint when fresh, else fall back to `now`."""
+    if checkpoint is None or (now - checkpoint) > CHECKPOINT_MAX_STALENESS:
+        return now
+    return min(now, checkpoint)
 
 
 def is_projection_eligible(filters: dict) -> bool:

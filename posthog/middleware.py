@@ -8,6 +8,7 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 from ipaddress import ip_address, ip_network
 from typing import Optional, cast
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth import logout
@@ -25,7 +26,7 @@ from django.utils.cache import add_never_cache_headers
 import structlog
 from django_prometheus.middleware import Metrics
 from loginas.utils import is_impersonated_session, restore_original_login
-from social_core.exceptions import AuthCanceled, AuthFailed
+from social_core.exceptions import AuthCanceled, AuthException, AuthFailed
 from statshog.defaults.django import statsd
 
 from posthog.api.shared import UserBasicSerializer
@@ -35,8 +36,13 @@ from posthog.cloud_utils import is_cloud, is_dev_mode
 from posthog.constants import AUTH_BACKEND_KEYS
 from posthog.event_usage import get_event_source, get_mcp_properties
 from posthog.geoip import get_geoip_properties
+from posthog.helpers.user_devices import set_known_device_cookie
 from posthog.models import Action, Cohort, FeatureFlag, Insight, Team, User
-from posthog.models.activity_logging.utils import activity_storage
+from posthog.models.activity_logging.utils import (
+    ACTIVITY_LOG_CLIENT_HEADER,
+    ACTIVITY_LOG_CLIENT_MAX_LENGTH,
+    activity_storage,
+)
 from posthog.models.utils import generate_random_token
 from posthog.rbac.user_access_control import UserAccessControl
 from posthog.settings import PROJECT_SWITCHING_TOKEN_ALLOWLIST, SITE_URL
@@ -220,8 +226,8 @@ class AutoProjectMiddleware:
         self.token_allowlist = PROJECT_SWITCHING_TOKEN_ALLOWLIST
 
     def __call__(self, request: HttpRequest):
-        # Skip project switching for CLI authorization page
-        if request.path.startswith("/cli/authorize"):
+        # Skip project switching for CLI authorization page and account social-link confirmation scene
+        if request.path.startswith("/cli/authorize") or request.path.startswith("/account/social-connected"):
             return self.get_response(request)
 
         if request.user.is_authenticated:
@@ -644,6 +650,19 @@ class SessionAgeMiddleware:
         return response
 
 
+class KnownLoginDeviceCookieMiddleware:
+    """(Re)issues the known-device cookie on every session-authenticated response"""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest):
+        response = self.get_response(request)
+        if request.session.accessed and request.user.is_authenticated and not is_impersonated_session(request):
+            set_known_device_cookie(response, request.user)
+        return response
+
+
 def get_impersonated_session_expires_at(request: HttpRequest) -> Optional[datetime]:
     if not is_impersonated_session(request):
         return None
@@ -779,6 +798,10 @@ class ActivityLoggingMiddleware:
             activity_storage.set_user(request.user)
             activity_storage.set_was_impersonated(is_impersonated_session(request))
 
+        client_header = request.headers.get(ACTIVITY_LOG_CLIENT_HEADER)
+        if client_header:
+            activity_storage.set_client(client_header[:ACTIVITY_LOG_CLIENT_MAX_LENGTH])
+
         try:
             response = self.get_response(request)
         finally:
@@ -870,6 +893,8 @@ class SocialAuthExceptionMiddleware:
     Middleware to handle custom social auth exceptions.
     """
 
+    _AUTH_FAILED_PREFIX = "Authentication failed: "
+
     def __init__(self, get_response):
         self.get_response = get_response
 
@@ -878,14 +903,14 @@ class SocialAuthExceptionMiddleware:
 
     def process_exception(self, request: HttpRequest, exception: Exception) -> HttpResponse | None:
         # Only handle exceptions on OAuth callback URLs
-        if not request.path.startswith("/complete/"):
+        if not request.path.startswith("/complete/") and not request.path.startswith("/login/"):
             return None
 
         # Handle AuthCanceled (user cancelled OAuth flow)
         if isinstance(exception, AuthCanceled):
             return redirect("/login?error_code=oauth_cancelled")
 
-        # Handle AuthFailed with specific error codes
+        # Handle AuthFailed with specific error codes that have dedicated frontend messages
         if isinstance(exception, AuthFailed) and len(exception.args) >= 1:
             error = exception.args[0]
             if error in (
@@ -897,8 +922,26 @@ class SocialAuthExceptionMiddleware:
             ):
                 return redirect(f"/login?error_code={error}")
 
-        # Handle other exceptions with existing middleware
+        # Handle any other social auth exception by passing the error detail to the frontend
+        if isinstance(exception, AuthException):
+            error_detail = self._get_error_detail(exception)
+            params = urlencode({"error_code": "social_login_failure", "error_detail": error_detail})
+            return redirect(f"/login?{params}")
+
         return None
+
+    def _get_error_detail(self, exception: AuthException) -> str:
+        error_detail = str(exception).strip()
+
+        if isinstance(exception, AuthFailed):
+            error_detail = self._strip_auth_failed_prefix(error_detail)
+
+        return error_detail or "An unexpected error occurred during authentication."
+
+    def _strip_auth_failed_prefix(self, error_detail: str) -> str:
+        if error_detail.startswith(self._AUTH_FAILED_PREFIX):
+            return error_detail[len(self._AUTH_FAILED_PREFIX) :].strip()
+        return error_detail
 
 
 class ActiveOrganizationMiddleware:
@@ -923,6 +966,14 @@ class ActiveOrganizationMiddleware:
 
         if user.current_organization is None:
             return self.get_response(request)
+
+        # Check pending deletion first — takes priority over is_active
+        if user.current_organization.is_pending_deletion:
+            return (
+                self.get_response(request)
+                if request.path == "/organization-pending-deletion"
+                else redirect("/organization-pending-deletion")
+            )
 
         if user.current_organization.is_active is not False:
             return redirect("/") if request.path == "/organization-deactivated" else self.get_response(request)
@@ -950,11 +1001,14 @@ IMPERSONATION_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 # These should be paths that are safe or necessary for the impersonated session to function.
 # Supports both prefix strings and compiled regex patterns.
 READ_ONLY_IMPERSONATION_ALLOWLISTED_PATHS: list[str | re.Pattern] = [
-    # These endpoints use POST but are read-only
-    re.compile(r"^/api/(environments|projects)/([0-9]+|@current)/query/?$"),
+    # These endpoints use POST but are read-only:
+    # /query/[A-Z][A-Za-z]* matches query-kind segments, while the schema-upgrade POST action
+    # /query/upgrade/ needs an explicit "|upgrade" branch as that starts with a lowercase letter
+    re.compile(r"^/api/(environments|projects)/([0-9]+|@current)/query(?:/[A-Za-z]+)?/?$"),
     re.compile(r"^/api/(environments|projects)/([0-9]+|@current)/insights/viewed/?$"),
     re.compile(r"^/api/(environments|projects)/([0-9]+|@current)/metalytics/?$"),
     re.compile(r"^/api/(environments|projects)/([0-9]+|@current)/endpoints/[^/]+/run/?$"),
+    re.compile(r"^/api/(environments|projects)/([0-9]+|@current)/endpoints/[^/]+/materialization_preview/?$"),
     re.compile(r"^/api/(environments|projects)/([0-9]+|@current)/endpoints/last_execution_times/?$"),
     re.compile(r"^/api/(environments|projects)/([0-9]+|@current)/persons/batch_by_distinct_ids/?$"),
     # POST but read-only: loads stack frame records (source context) for error tracking UI

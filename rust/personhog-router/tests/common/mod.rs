@@ -16,20 +16,24 @@ use personhog_proto::personhog::replica::v1::person_hog_replica_server::{
 use personhog_proto::personhog::service::v1::person_hog_service_client::PersonHogServiceClient;
 use personhog_proto::personhog::service::v1::person_hog_service_server::PersonHogServiceServer;
 use personhog_proto::personhog::types::v1::{
-    CheckCohortMembershipRequest, CohortMembershipResponse, DeleteHashKeyOverridesByTeamsRequest,
-    DeleteHashKeyOverridesByTeamsResponse, GetDistinctIdsForPersonRequest,
-    GetDistinctIdsForPersonResponse, GetDistinctIdsForPersonsRequest,
-    GetDistinctIdsForPersonsResponse, GetGroupRequest, GetGroupResponse,
-    GetGroupTypeMappingsByProjectIdRequest, GetGroupTypeMappingsByProjectIdsRequest,
-    GetGroupTypeMappingsByTeamIdRequest, GetGroupTypeMappingsByTeamIdsRequest,
-    GetGroupsBatchRequest, GetGroupsBatchResponse, GetGroupsRequest,
-    GetHashKeyOverrideContextRequest, GetHashKeyOverrideContextResponse,
+    CheckCohortMembershipRequest, CohortMembershipResponse, CountCohortMembersRequest,
+    CountCohortMembersResponse, DeleteCohortMemberRequest, DeleteCohortMemberResponse,
+    DeleteCohortMembersBulkRequest, DeleteCohortMembersBulkResponse,
+    DeleteHashKeyOverridesByTeamsRequest, DeleteHashKeyOverridesByTeamsResponse,
+    DeletePersonsBatchForTeamRequest, DeletePersonsBatchForTeamResponse, DeletePersonsRequest,
+    DeletePersonsResponse, GetDistinctIdsForPersonRequest, GetDistinctIdsForPersonResponse,
+    GetDistinctIdsForPersonsRequest, GetDistinctIdsForPersonsResponse, GetGroupRequest,
+    GetGroupResponse, GetGroupTypeMappingsByProjectIdRequest,
+    GetGroupTypeMappingsByProjectIdsRequest, GetGroupTypeMappingsByTeamIdRequest,
+    GetGroupTypeMappingsByTeamIdsRequest, GetGroupsBatchRequest, GetGroupsBatchResponse,
+    GetGroupsRequest, GetHashKeyOverrideContextRequest, GetHashKeyOverrideContextResponse,
     GetPersonByDistinctIdRequest, GetPersonByUuidRequest, GetPersonRequest, GetPersonResponse,
     GetPersonsByDistinctIdsInTeamRequest, GetPersonsByDistinctIdsRequest, GetPersonsByUuidsRequest,
     GetPersonsRequest, GroupTypeMappingsBatchResponse, GroupTypeMappingsResponse, GroupsResponse,
-    Person, PersonsByDistinctIdsInTeamResponse, PersonsByDistinctIdsResponse, PersonsResponse,
-    UpdatePersonPropertiesRequest, UpdatePersonPropertiesResponse, UpsertHashKeyOverridesRequest,
-    UpsertHashKeyOverridesResponse,
+    InsertCohortMembersRequest, InsertCohortMembersResponse, ListCohortMemberIdsRequest,
+    ListCohortMemberIdsResponse, Person, PersonsByDistinctIdsInTeamResponse,
+    PersonsByDistinctIdsResponse, PersonsResponse, UpdatePersonPropertiesRequest,
+    UpdatePersonPropertiesResponse, UpsertHashKeyOverridesRequest, UpsertHashKeyOverridesResponse,
 };
 use personhog_router::backend::{LeaderBackend, ReplicaBackend};
 use personhog_router::config::RetryConfig;
@@ -231,6 +235,48 @@ impl PersonHogReplica for TestReplicaService {
         }))
     }
 
+    async fn count_cohort_members(
+        &self,
+        _request: Request<CountCohortMembersRequest>,
+    ) -> Result<Response<CountCohortMembersResponse>, Status> {
+        Ok(Response::new(CountCohortMembersResponse { count: 0 }))
+    }
+
+    async fn delete_cohort_member(
+        &self,
+        _request: Request<DeleteCohortMemberRequest>,
+    ) -> Result<Response<DeleteCohortMemberResponse>, Status> {
+        Ok(Response::new(DeleteCohortMemberResponse { deleted: false }))
+    }
+
+    async fn delete_cohort_members_bulk(
+        &self,
+        _request: Request<DeleteCohortMembersBulkRequest>,
+    ) -> Result<Response<DeleteCohortMembersBulkResponse>, Status> {
+        Ok(Response::new(DeleteCohortMembersBulkResponse {
+            deleted_count: 0,
+        }))
+    }
+
+    async fn insert_cohort_members(
+        &self,
+        _request: Request<InsertCohortMembersRequest>,
+    ) -> Result<Response<InsertCohortMembersResponse>, Status> {
+        Ok(Response::new(InsertCohortMembersResponse {
+            inserted_count: 0,
+        }))
+    }
+
+    async fn list_cohort_member_ids(
+        &self,
+        _request: Request<ListCohortMemberIdsRequest>,
+    ) -> Result<Response<ListCohortMemberIdsResponse>, Status> {
+        Ok(Response::new(ListCohortMemberIdsResponse {
+            person_ids: vec![],
+            next_cursor: 0,
+        }))
+    }
+
     async fn get_group(
         &self,
         _request: Request<GetGroupRequest>,
@@ -288,6 +334,22 @@ impl PersonHogReplica for TestReplicaService {
     ) -> Result<Response<GroupTypeMappingsBatchResponse>, Status> {
         Ok(Response::new(GroupTypeMappingsBatchResponse {
             results: vec![],
+        }))
+    }
+
+    async fn delete_persons(
+        &self,
+        _request: Request<DeletePersonsRequest>,
+    ) -> Result<Response<DeletePersonsResponse>, Status> {
+        Ok(Response::new(DeletePersonsResponse { deleted_count: 0 }))
+    }
+
+    async fn delete_persons_batch_for_team(
+        &self,
+        _request: Request<DeletePersonsBatchForTeamRequest>,
+    ) -> Result<Response<DeletePersonsBatchForTeamResponse>, Status> {
+        Ok(Response::new(DeletePersonsBatchForTeamResponse {
+            deleted_count: 0,
         }))
     }
 }
