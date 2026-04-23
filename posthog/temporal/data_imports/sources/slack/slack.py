@@ -287,13 +287,22 @@ def _channel_messages_generator(
 
 def _webhook_table_transformer(table: pa.Table) -> pa.Table:
     event_col = table.column("event").to_pylist()
+
+    # Deduplicate by (ts, channel) — Slack retries delivery on timeout, so the same
+    # message event can arrive more than once within a single sync batch.
+    seen: set[tuple[str, str]] = set()
     rows = []
     for event_data in event_col:
         if event_data is None:
             continue
-        event = orjson.loads(event_data) if isinstance(event_data, (str, bytes)) else event_data
-        event["channel_id"] = event.get("channel", "")
-        ts = event.get("ts")
+        event: dict[str, Any] = orjson.loads(event_data) if isinstance(event_data, (str, bytes)) else dict(event_data)
+        channel = event.get("channel", "")
+        ts = event.get("ts") or ""
+        key = (ts, channel)
+        if key in seen:
+            continue
+        seen.add(key)
+        event["channel_id"] = channel
         if ts:
             event["timestamp"] = datetime.datetime.fromtimestamp(float(ts), tz=datetime.UTC).isoformat()
         rows.append(event)

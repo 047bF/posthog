@@ -15,7 +15,12 @@ from posthog.schema import (
 
 from posthog.exceptions_capture import capture_exception
 from posthog.temporal.data_imports.pipelines.pipeline.typings import SourceInputs, SourceResponse
-from posthog.temporal.data_imports.sources.common.base import FieldType, ResumableSource, WebhookSource
+from posthog.temporal.data_imports.sources.common.base import (
+    FieldType,
+    ResumableSource,
+    WebhookCreationResult,
+    WebhookSource,
+)
 from posthog.temporal.data_imports.sources.common.mixins import OAuthMixin
 from posthog.temporal.data_imports.sources.common.registry import SourceRegistry
 from posthog.temporal.data_imports.sources.common.resumable import ResumableSourceManager
@@ -85,6 +90,12 @@ class SlackSource(ResumableSource[SlackSourceConfig, SlackResumeConfig], Webhook
 
     def get_webhook_source_manager(self, inputs: SourceInputs) -> WebhookSourceManager:
         return WebhookSourceManager(inputs, inputs.logger)
+
+    def create_webhook(self, config: SlackSourceConfig, webhook_url: str, team_id: int) -> WebhookCreationResult:
+        return WebhookCreationResult(
+            success=False,
+            error="Slack does not support automatic webhook creation. Please follow the manual setup instructions.",
+        )
 
     @property
     def get_source_config(self) -> SourceConfig:
