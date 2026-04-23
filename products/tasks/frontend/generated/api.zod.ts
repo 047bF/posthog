@@ -226,7 +226,9 @@ export const TasksRunCreateBody = /* @__PURE__ */ zod.union([
             github_user_token: zod
                 .string()
                 .optional()
-                .describe('Ephemeral GitHub user token from PostHog Code for user-authored cloud pull requests.'),
+                .describe(
+                    'Optional GitHub user token from PostHog Code for user-authored cloud pull requests. Prefer linking GitHub from Settings → Linked accounts so the server can manage tokens; this field remains supported for callers that still manage their own tokens.'
+                ),
             initial_permission_mode: zod
                 .enum(['default', 'acceptEdits', 'plan', 'bypassPermissions', 'auto'])
                 .describe(
@@ -303,7 +305,9 @@ export const TasksRunCreateBody = /* @__PURE__ */ zod.union([
             github_user_token: zod
                 .string()
                 .optional()
-                .describe('Ephemeral GitHub user token from PostHog Code for user-authored cloud pull requests.'),
+                .describe(
+                    'Optional GitHub user token from PostHog Code for user-authored cloud pull requests. Prefer linking GitHub from Settings → Linked accounts so the server can manage tokens; this field remains supported for callers that still manage their own tokens.'
+                ),
             initial_permission_mode: zod
                 .enum(['auto', 'read-only', 'full-access'])
                 .describe('* `auto` - auto\n* `read-only` - read-only\n* `full-access` - full-access')
@@ -359,7 +363,9 @@ export const TasksRunCreateBody = /* @__PURE__ */ zod.union([
         github_user_token: zod
             .string()
             .optional()
-            .describe('Ephemeral GitHub user token from PostHog Code for user-authored cloud pull requests.'),
+            .describe(
+                'Optional GitHub user token from PostHog Code for user-authored cloud pull requests. Prefer linking GitHub from Settings → Linked accounts so the server can manage tokens; this field remains supported for callers that still manage their own tokens.'
+            ),
     }),
 ])
 
